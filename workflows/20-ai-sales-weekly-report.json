@@ -1,0 +1,293 @@
+{
+  "id": "revenue20",
+  "name": "20. AI Sales Weekly Report",
+  "active": false,
+  "nodes": [
+    {
+      "id": "bde0121b-314c-4793-8de4-8d390dcf217c",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "96754692-289a-45d3-b5bd-07ea7c37f6e1",
+      "name": "Read CRM_Deals 1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM_Deals",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "993d6b70-e9e1-40b8-8320-ddcee22ae602",
+      "name": "Compute actual weekly metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function weekly(rows) {\n  const until = Date.now(), since = until - 7 * 86400000;\n  const filtered = rows.filter(r => { const t = Date.parse(r.closed_at || r.date || r.created_at); return r.deal_id && Number.isFinite(t) && t >= since && t < until; });\n  const seen = new Set(), byRep = {}, bySource = {};\n  let won = 0, lost = 0, revenue = 0, pipeline = 0;\n  for (const r of filtered) {\n    if (seen.has(r.deal_id)) throw new Error('Duplicate deal_id in weekly data');\n    seen.add(r.deal_id);\n    const amount = numeric(r.amount_idr ?? r.deal_value_idr ?? 0, 'report amount');\n    const state = String(r.stage || r.status || '').toUpperCase();\n    if (state === 'CLOSED_WON' || state === 'PAID') { won++; revenue += amount; byRep[r.owner_name || 'Unassigned'] = (byRep[r.owner_name || 'Unassigned'] || 0) + amount; bySource[r.source || 'Unknown'] = (bySource[r.source || 'Unknown'] || 0) + amount; }\n    else if (state === 'CLOSED_LOST') lost++;\n    else pipeline += amount;\n  }\n  const result = { period_start: new Date(since).toISOString(), period_end: new Date(until).toISOString(), total_deals: filtered.length, closed_won_count: won, closed_lost_count: lost, win_rate_pct: won + lost ? Math.round(won * 10000 / (won + lost)) / 100 : 0, won_revenue_idr: revenue, open_pipeline_idr: pipeline, revenue_by_rep: byRep, revenue_by_source: bySource };\n  return { ...result, ai_prompt: 'Analisis metrik berikut. Dilarang mengarang angka, target tercapai, atau penyebab kausal. JSON {\"summary\":\"...\",\"actions\":[\"...\"]}. Data: ' + JSON.stringify(result) };\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nreturn [{json:weekly($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "d0c707ff-7e5c-4829-8b6b-8fa1c594b456",
+      "name": "Gemini analysis",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.ai_prompt }}",
+        "batching": {
+          "batchSize": 1
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "afddffd8-318b-4ed3-8e9d-fc053536b595",
+      "name": "Gemini model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "SET_Gemini",
+          "name": "CONFIGURE: Gemini"
+        }
+      }
+    },
+    {
+      "id": "efa4d25f-bf73-4e79-893a-ae21b37ac39e",
+      "name": "Parse Gemini result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function report(d, result) {\n  const a = aiJSON(result); need(a.summary, 'report summary');\n  if (!Array.isArray(a.actions)) throw new Error('Report actions must be array');\n  return { ...d, subject: 'Laporan penjualan mingguan: ' + formatMoney(d.won_revenue_idr), email_html: `<html lang=\"id\"><meta charset=\"utf-8\"><h1>Laporan penjualan mingguan</h1><p>${html(d.period_start)} sampai ${html(d.period_end)}</p><p>Revenue: ${formatMoney(d.won_revenue_idr)}. Win rate: ${d.win_rate_pct}%. Pipeline baru: ${formatMoney(d.open_pipeline_idr)}.</p><p>${html(a.summary)}</p><ul>${a.actions.map(x => '<li>' + html(x) + '</li>').join('')}</ul></html>` };\n}\nfunction aiJSON(result) {\n  const raw = result.output || result.text;\n  if (raw && typeof raw === 'object') return raw;\n  try { return JSON.parse(String(need(raw, 'AI response')).replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim()); }\n  catch { throw new Error('AI response must contain valid JSON'); }\n}\nfunction formatMoney(n) { return 'Rp ' + Number(n).toLocaleString('id-ID'); }\nfunction html(value) { return String(value ?? '').replace(/[&<>\"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = report($(\"Compute actual weekly metrics\").itemMatching(i).json, d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "7992ee14-60bd-40e7-ae02-8e5867e9060f",
+      "name": "Send email 6",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ \"\" }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "SET_Gmail",
+          "name": "CONFIGURE: Gmail"
+        }
+      }
+    },
+    {
+      "id": "8eb2b101-85f2-4245-ad4b-ce7fa97aa290",
+      "name": "Restore Send email 6",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Parse Gemini result\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "1b1b0c3f-175f-498a-86eb-59d9af01d7f9",
+      "name": "Schedule WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6bf1f388-ea8e-418f-b4b7-6385c684cd7f",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Read CRM_Deals 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read CRM_Deals 1": {
+      "main": [
+        [
+          {
+            "node": "Compute actual weekly metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute actual weekly metrics": {
+      "main": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini result": {
+      "main": [
+        [
+          {
+            "node": "Send email 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email 6": {
+      "main": [
+        [
+          {
+            "node": "Restore Send email 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule WIB": {
+      "main": [
+        [
+          {
+            "node": "Read CRM_Deals 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "1de22f5c-ac1b-4588-b7d0-b71ab124428b",
+  "pinData": {}
+}

@@ -1,0 +1,246 @@
+{
+  "n8nVersion": "2.44.4",
+  "workflows": [
+    {
+      "id": "revenue00",
+      "name": "00. Master Revenue Router",
+      "nodes": 6
+    },
+    {
+      "id": "revenue01",
+      "name": "01. Auto Lead Capture",
+      "nodes": 13
+    },
+    {
+      "id": "revenue02",
+      "name": "02. Instant WA Greeting",
+      "nodes": 8
+    },
+    {
+      "id": "revenue03",
+      "name": "03. AI Lead Qualifier",
+      "nodes": 12
+    },
+    {
+      "id": "revenue04",
+      "name": "04. Form ke CRM",
+      "nodes": 10
+    },
+    {
+      "id": "revenue05",
+      "name": "05. AI DM Auto-Reply",
+      "nodes": 19
+    },
+    {
+      "id": "revenue06",
+      "name": "06. Auto Booking Meeting",
+      "nodes": 12
+    },
+    {
+      "id": "revenue07",
+      "name": "07. Notif Hot Leads Sales",
+      "nodes": 13
+    },
+    {
+      "id": "revenue08",
+      "name": "08. Quote Generator",
+      "nodes": 9
+    },
+    {
+      "id": "revenue09",
+      "name": "09. Kirim Proposal",
+      "nodes": 10
+    },
+    {
+      "id": "revenue10",
+      "name": "10. AI Proposal Summary",
+      "nodes": 9
+    },
+    {
+      "id": "revenue11",
+      "name": "11. Follow-Up WA",
+      "nodes": 9
+    },
+    {
+      "id": "revenue12",
+      "name": "12. Follow-Up Proposal",
+      "nodes": 9
+    },
+    {
+      "id": "revenue13",
+      "name": "13. Re-Engage Leads",
+      "nodes": 9
+    },
+    {
+      "id": "revenue14",
+      "name": "14. Invoice dan Reminder",
+      "nodes": 20
+    },
+    {
+      "id": "revenue15",
+      "name": "15. Notif Payment Sukses",
+      "nodes": 15
+    },
+    {
+      "id": "revenue16",
+      "name": "16. Onboarding Klien",
+      "nodes": 17
+    },
+    {
+      "id": "revenue17",
+      "name": "17. Review dan Rating",
+      "nodes": 13
+    },
+    {
+      "id": "revenue18",
+      "name": "18. Upsell Sequence",
+      "nodes": 11
+    },
+    {
+      "id": "revenue19",
+      "name": "19. AI Competitor Monitor",
+      "nodes": 13
+    },
+    {
+      "id": "revenue20",
+      "name": "20. AI Sales Weekly Report",
+      "nodes": 10
+    }
+  ],
+  "tables": {
+    "Leads_DB": [
+      "lead_id",
+      "full_name",
+      "email",
+      "phone_e164",
+      "company",
+      "marketing_opt_in",
+      "do_not_contact",
+      "captured_at",
+      "status",
+      "greeted_at",
+      "lead_score",
+      "lead_tier",
+      "reason",
+      "qualified_at",
+      "last_reply_at",
+      "calendar_event_id",
+      "start_iso",
+      "meet_url",
+      "followup_count",
+      "last_followup_at"
+    ],
+    "CRM_Contacts": [
+      "lead_id",
+      "full_name",
+      "email",
+      "phone_e164",
+      "company",
+      "marketing_opt_in",
+      "do_not_contact",
+      "captured_at",
+      "status",
+      "contact_id"
+    ],
+    "CRM_Deals": [
+      "deal_id",
+      "lead_id",
+      "full_name",
+      "email",
+      "phone_e164",
+      "company",
+      "owner_name",
+      "owner_wa",
+      "stage",
+      "deal_value_idr",
+      "marketing_opt_in",
+      "do_not_contact",
+      "proposal_id",
+      "proposal_url",
+      "proposal_sent_at",
+      "next_followup_at",
+      "proposal_followup_count",
+      "last_followup_at"
+    ],
+    "Quotes_DB": [
+      "quote_no",
+      "full_name",
+      "email",
+      "phone_e164",
+      "company",
+      "line_items_json",
+      "subtotal_idr",
+      "tax_rate",
+      "tax_idr",
+      "discount_idr",
+      "grand_total_idr",
+      "dp_idr",
+      "balance_idr",
+      "status",
+      "created_at"
+    ],
+    "Invoices_DB": [
+      "invoice_no",
+      "lead_id",
+      "full_name",
+      "email",
+      "phone_e164",
+      "company",
+      "amount_idr",
+      "due_date",
+      "payment_status",
+      "payment_url",
+      "payment_expires_at",
+      "created_at",
+      "marketing_opt_in",
+      "do_not_contact",
+      "last_reminder_at",
+      "receipt_no",
+      "paid_at",
+      "transaction_id"
+    ],
+    "Projects_DB": [
+      "project_id",
+      "invoice_no",
+      "full_name",
+      "email",
+      "phone_e164",
+      "company",
+      "status",
+      "package_tier",
+      "drive_folder_id",
+      "drive_folder_url",
+      "created_at",
+      "marketing_opt_in",
+      "do_not_contact",
+      "rating_score",
+      "last_upsell_at"
+    ],
+    "Reviews_DB": [
+      "review_id",
+      "project_id",
+      "rating_score",
+      "feedback",
+      "recovery_needed",
+      "submitted_at"
+    ],
+    "Competitor_Intel_DB": [
+      "snapshot_id",
+      "competitor_name",
+      "pricing_url",
+      "snapshot",
+      "summary",
+      "observed_at"
+    ]
+  },
+  "credentialTypes": {
+    "googleSheetsOAuth2Api": "Google Sheets",
+    "googleCalendarOAuth2Api": "Google Calendar",
+    "googleDriveOAuth2Api": "Google Drive",
+    "gmailOAuth2": "Gmail",
+    "googlePalmApi": "Gemini",
+    "telegramApi": "Telegram",
+    "httpHeaderAuth": "Revenue webhook or Fonnte",
+    "httpBasicAuth": "Midtrans server key"
+  }
+}

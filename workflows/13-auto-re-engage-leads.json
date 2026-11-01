@@ -1,0 +1,319 @@
+{
+  "id": "revenue13",
+  "name": "13. Re-Engage Leads",
+  "active": false,
+  "nodes": [
+    {
+      "id": "50940577-09fa-4100-877e-f530dcba0312",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "b9c70398-9629-40e2-a480-c1a041daf17a",
+      "name": "Read Leads_DB 1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "ea074858-c934-410b-b168-1d2795ea7164",
+      "name": "Select eligible contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function reengage(raw) {\n  const d = contact(raw); if (!allowed(d) || !d.phone_e164 || ['CLOSED_WON', 'PAID'].includes(String(d.status).toUpperCase())) return null;\n  const last = [d.last_reply_at, d.last_followup_at, d.captured_at].filter(Boolean).sort().at(-1);\n  if (!last || days(last) <= 30) return null;\n  return { ...d, status: 'REENGAGED', last_followup_at: new Date().toISOString(), message: `Halo ${d.full_name || 'Kak'}, apakah kebutuhan Anda sebelumnya masih relevan? Jika berkenan, kita bisa lanjutkan diskusi. Balas STOP untuk berhenti.` };\n}\nfunction allowed(row) { return flag(row.marketing_opt_in) && !flag(row.do_not_contact) && !['DNC', 'UNSUBSCRIBED'].includes(String(row.status).toUpperCase()); }\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction days(value) {\n  const ms = new Date(need(value, 'date')).getTime();\n  if (!Number.isFinite(ms)) throw new Error('Invalid date');\n  return Math.floor((Date.now() - ms) / 86400000);\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction flag(value) { return value === true || value === 'true' || value === 1 || value === '1'; }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = reengage(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "cab7201f-432d-4b2d-adf9-bde7f1efaccf",
+      "name": "Send WhatsApp 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "8269c3e9-4d67-479a-9bd6-4b4a319cac8a",
+      "name": "Check Fonnte result 4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Select eligible contacts\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "d4a20d73-0f9d-49fa-bac4-4dccf106862a",
+      "name": "Save Leads_DB 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "status": "={{ $json[\"status\"] ?? '' }}",
+            "last_followup_at": "={{ $json[\"last_followup_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_followup_at",
+              "displayName": "last_followup_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "1c80667f-2e2d-4c04-9ad2-f50f9e13bc63",
+      "name": "Restore Save Leads_DB 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 4\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "b042d721-cdc2-41b1-acc9-ad03a756fd13",
+      "name": "Schedule WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "077b742d-3b6b-4202-9fec-80a9cfbce3e3",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Read Leads_DB 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads_DB 1": {
+      "main": [
+        [
+          {
+            "node": "Select eligible contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select eligible contacts": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 3": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 4": {
+      "main": [
+        [
+          {
+            "node": "Save Leads_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Leads_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Leads_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule WIB": {
+      "main": [
+        [
+          {
+            "node": "Read Leads_DB 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "57c7585c-85c8-4a19-bb38-972f349ca1ba",
+  "pinData": {}
+}

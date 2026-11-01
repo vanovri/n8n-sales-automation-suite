@@ -1,0 +1,831 @@
+{
+  "id": "revenue14",
+  "name": "14. Invoice dan Reminder",
+  "active": false,
+  "nodes": [
+    {
+      "id": "aa89cee4-7426-4e18-999b-5f4fea17c5b0",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "aa5473de-a95d-42a1-8a06-86caea130dc5",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-14",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "da623b7e-0193-4f88-bef5-4d9a6aafcf1a",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "ab00c41b-e481-4916-80da-efd15e5a6fe0",
+      "name": "Prepare Invoice dan Reminder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function invoice(raw) {\n  const d = contact(raw); need(d.email, 'email'); need(d.invoice_no, 'invoice_no');\n  const amount = numeric(raw.amount_idr, 'amount_idr', 1);\n  if (!Number.isSafeInteger(amount)) throw new Error('Integer IDR amount required');\n  const due = String(need(raw.due_date, 'due_date'));\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(due) || !Number.isFinite(Date.parse(due)) || new Date(due).toISOString().slice(0,10)!==due) throw new Error('Invalid due_date');\n  return { ...d, lead_id:d.lead_id || 'LD-'+key(d.phone_e164 || d.email), amount_idr: amount, due_date: due, payment_status: 'UNPAID', created_at: new Date().toISOString() };\n}\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = invoice(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "1461f7e6-cd68-4a8e-b9d6-99485121e6e5",
+      "name": "Create Midtrans payment link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"https://app.sandbox.midtrans.com\" + '/snap/v1/transactions' }}",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {transaction_details:{order_id:$json.invoice_no,gross_amount:$json.amount_idr},customer_details:{first_name:$json.full_name,email:$json.email,phone:$json.phone_e164},page_expiry:{duration:24,unit:\"hours\"},expiry:{duration:24,unit:\"hours\"}} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "SET_Midtrans",
+          "name": "CONFIGURE: Midtrans"
+        }
+      }
+    },
+    {
+      "id": "7fd48779-b023-4b57-b618-4a700f2f07dd",
+      "name": "Use provider payment link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function invoiceLink(d, result) { return { ...d, payment_url: url(result.redirect_url, 'provider payment URL'), payment_expires_at:new Date(Date.now()+24*3600000).toISOString() }; }\nfunction url(value, name) {\n  const s = String(need(value, name));\n  if (!/^https:\\/\\/[^\\s<>\"']+$/i.test(s)) throw new Error('Invalid HTTPS URL: ' + name);\n  return s;\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = invoiceLink($(\"Prepare Invoice dan Reminder\").itemMatching(i).json,d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "d3dfd140-297e-4d17-a158-adc6f8bb579c",
+      "name": "Save Invoices_DB 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "invoice_no": "={{ $json[\"invoice_no\"] ?? '' }}",
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "full_name": "={{ $json[\"full_name\"] ?? '' }}",
+            "email": "={{ $json[\"email\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "company": "={{ $json[\"company\"] ?? '' }}",
+            "amount_idr": "={{ $json[\"amount_idr\"] ?? '' }}",
+            "due_date": "={{ $json[\"due_date\"] ?? '' }}",
+            "payment_status": "={{ $json[\"payment_status\"] ?? '' }}",
+            "payment_url": "={{ $json[\"payment_url\"] ?? '' }}",
+            "payment_expires_at": "={{ $json[\"payment_expires_at\"] ?? '' }}",
+            "created_at": "={{ $json[\"created_at\"] ?? '' }}",
+            "marketing_opt_in": "={{ $json[\"marketing_opt_in\"] ?? '' }}",
+            "do_not_contact": "={{ $json[\"do_not_contact\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "invoice_no"
+          ],
+          "schema": [
+            {
+              "id": "invoice_no",
+              "displayName": "invoice_no",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount_idr",
+              "displayName": "amount_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payment_status",
+              "displayName": "payment_status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payment_url",
+              "displayName": "payment_url",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payment_expires_at",
+              "displayName": "payment_expires_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "marketing_opt_in",
+              "displayName": "marketing_opt_in",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "do_not_contact",
+              "displayName": "do_not_contact",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "5ba3ed9b-744f-442a-bb3f-4e8ea1516e14",
+      "name": "Restore Save Invoices_DB 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Use provider payment link\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "375fce14-cced-48a8-864b-7afc8bc9714f",
+      "name": "New invoice message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function formatMoney(n) { return 'Rp ' + Number(n).toLocaleString('id-ID'); }\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = ({...d,message:'Invoice '+d.invoice_no+', '+formatMoney(d.amount_idr)+', jatuh tempo '+d.due_date+'. '+d.payment_url,last_reminder_at:new Date().toISOString()}); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "ef18a657-a8e4-4b4a-afe8-1130adefce7c",
+      "name": "Send WhatsApp 8",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "7da02b48-c782-4788-916f-d0601ff8ca60",
+      "name": "Check Fonnte result 9",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"New invoice message\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "a6cc0c66-7968-4ff4-a25b-30467e8f1dc4",
+      "name": "Save Invoices_DB 10",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "invoice_no": "={{ $json[\"invoice_no\"] ?? '' }}",
+            "last_reminder_at": "={{ $json[\"last_reminder_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "invoice_no"
+          ],
+          "schema": [
+            {
+              "id": "invoice_no",
+              "displayName": "invoice_no",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_reminder_at",
+              "displayName": "last_reminder_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "25987c74-1fa6-4236-adf9-f91dd7f7a345",
+      "name": "Restore Save Invoices_DB 10",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2770,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 9\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "48d201a8-d88c-4b0a-a4c8-dc6b7671e97b",
+      "name": "Reminder schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        3000,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "70ac710e-add4-4f3c-afc1-bcc37249d7ab",
+      "name": "Read Invoices_DB 13",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3230,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "325c7fa6-3a8c-4bcc-9b22-5023d3a20ffd",
+      "name": "Select due reminders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3460,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function reminder(raw) {\n  const d = contact(raw); if (d.payment_status === 'PAID' || !d.phone_e164) return null;\n  if (d.last_reminder_at && wibDate(d.last_reminder_at) === wibDate()) return null;\n  const diff = Math.round((Date.parse(need(d.due_date, 'due_date')) - Date.parse(wibDate())) / 86400000);\n  if (![3, 0, -3, -7].includes(diff)) return null;\n  const expires=Date.parse(d.payment_expires_at);\n  const paymentInstruction=Number.isFinite(expires)&&expires>Date.now()?url(d.payment_url,'payment_url'):'Hubungi tim untuk tautan pembayaran terbaru.';\n  return { ...d, last_reminder_at: new Date().toISOString(), message: `Pengingat invoice ${need(d.invoice_no, 'invoice_no')}, ${formatMoney(numeric(d.amount_idr, 'amount'))}, jatuh tempo ${d.due_date}. ${paymentInstruction}` };\n}\nfunction url(value, name) {\n  const s = String(need(value, name));\n  if (!/^https:\\/\\/[^\\s<>\"']+$/i.test(s)) throw new Error('Invalid HTTPS URL: ' + name);\n  return s;\n}\nfunction wibDate(value = Date.now()) { return new Date(new Date(value).getTime() + 7 * 3600000).toISOString().slice(0, 10); }\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction formatMoney(n) { return 'Rp ' + Number(n).toLocaleString('id-ID'); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = reminder(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "f0148035-6c01-4e04-8c04-29ecc96fc333",
+      "name": "Send WhatsApp 15",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3690,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "6a1c92cd-788b-43c0-bbc8-7b9d79eacaad",
+      "name": "Check Fonnte result 16",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Select due reminders\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "5a5232c9-8f45-475a-a8e5-f4167038645f",
+      "name": "Save Invoices_DB 17",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4150,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "invoice_no": "={{ $json[\"invoice_no\"] ?? '' }}",
+            "last_reminder_at": "={{ $json[\"last_reminder_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "invoice_no"
+          ],
+          "schema": [
+            {
+              "id": "invoice_no",
+              "displayName": "invoice_no",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_reminder_at",
+              "displayName": "last_reminder_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "00f8fda3-3d0e-4d5e-8423-69bcdcafb20f",
+      "name": "Restore Save Invoices_DB 17",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4380,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 16\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "c57bfe1e-0e1e-408d-8ba6-8eaa85853afc",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4610,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Invoice dan Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Invoice dan Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Invoice dan Reminder": {
+      "main": [
+        [
+          {
+            "node": "Create Midtrans payment link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Midtrans payment link": {
+      "main": [
+        [
+          {
+            "node": "Use provider payment link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use provider payment link": {
+      "main": [
+        [
+          {
+            "node": "Save Invoices_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Invoices_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Invoices_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Invoices_DB 5": {
+      "main": [
+        [
+          {
+            "node": "New invoice message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New invoice message": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 8": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 9": {
+      "main": [
+        [
+          {
+            "node": "Save Invoices_DB 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Invoices_DB 10": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Invoices_DB 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reminder schedule": {
+      "main": [
+        [
+          {
+            "node": "Read Invoices_DB 13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Invoices_DB 13": {
+      "main": [
+        [
+          {
+            "node": "Select due reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select due reminders": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 15": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 16": {
+      "main": [
+        [
+          {
+            "node": "Save Invoices_DB 17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Invoices_DB 17": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Invoices_DB 17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "b9ce0dba-f5b0-4036-8604-115fc77fc319",
+  "pinData": {}
+}

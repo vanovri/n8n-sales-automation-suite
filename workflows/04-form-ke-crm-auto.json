@@ -1,0 +1,548 @@
+{
+  "id": "revenue04",
+  "name": "04. Form ke CRM",
+  "active": false,
+  "nodes": [
+    {
+      "id": "3ce4b8ce-68ca-4705-92ca-6570542f1b5f",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "35fd4b8f-a6e5-4df3-a81a-742c0cb489ac",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-04",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "cdc5c706-24db-40c9-a1ae-1bb29709f6b4",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "900b0c27-8919-4740-80fd-f6b2a8ccc243",
+      "name": "Prepare Form ke CRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const $env = Object.freeze({\"GSHEET_CRM_ID\":\"\",\"GEMINI_MODEL\":\"models/gemini-3.8-flash\",\"CALENDAR_ID\":\"primary\",\"REPORT_RECIPIENT_EMAIL\":\"\",\"TELEGRAM_SALES_CHAT_ID\":\"\",\"SALES_OWNER_WA\":\"\",\"SALES_MANAGER_WA\":\"\",\"SALES_ROSTER_JSON\":\"[]\",\"SERVICE_CATALOG_JSON\":\"{}\",\"UPGRADE_CATALOG_JSON\":\"{}\",\"COMPETITOR_WATCHLIST_JSON\":\"[]\",\"GOOGLE_REVIEW_URL\":\"\",\"META_GRAPH_VERSION\":\"\",\"QUOTE_TAX_RATE\":\"\",\"QUOTE_DISCOUNT_PCT\":\"0\",\"MIDTRANS_SNAP_BASE_URL\":\"https://app.sandbox.midtrans.com\",\"MIDTRANS_API_BASE_URL\":\"https://api.sandbox.midtrans.com\"});\nfunction crm(raw) {\n  const d = capture(raw);\n  const roster = JSON.parse(need($env.SALES_ROSTER_JSON, 'SALES_ROSTER_JSON'));\n  if (!Array.isArray(roster) || !roster.length) throw new Error('Sales roster empty');\n  // Stable assignment makes retries deterministic. This is not round-robin assignment.\n  const owner = roster[parseInt(key(d.lead_id).slice(0, 8), 16) % roster.length];\n  need(owner.name, 'sales owner name'); need(owner.wa, 'sales owner WA');\n  return { ...d, contact_id: d.lead_id, deal_id: 'DL-' + key(d.lead_id + ':' + String(need(raw.request_id, 'request_id'))), stage: 'QUALIFICATION', deal_value_idr: numeric(raw.deal_value_idr ?? 0, 'deal_value_idr'), owner_name: owner.name, owner_wa: phone(owner.wa) };\n}\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nfunction capture(raw) {\n  const d = contact(raw);\n  if (!d.phone_e164 && !d.email) throw new Error('Valid phone or email required');\n  return { ...d, lead_id: 'LD-' + key(d.phone_e164 || d.email), status: 'NEW', captured_at: new Date().toISOString(), marketing_opt_in: flag(d.marketing_opt_in), do_not_contact: flag(d.do_not_contact) };\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction flag(value) { return value === true || value === 'true' || value === 1 || value === '1'; }\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = crm(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "2c154517-7bb0-452f-947a-8b3b25b01994",
+      "name": "Save CRM_Contacts 3",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM_Contacts",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "full_name": "={{ $json[\"full_name\"] ?? '' }}",
+            "email": "={{ $json[\"email\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "company": "={{ $json[\"company\"] ?? '' }}",
+            "marketing_opt_in": "={{ $json[\"marketing_opt_in\"] ?? '' }}",
+            "do_not_contact": "={{ $json[\"do_not_contact\"] ?? '' }}",
+            "captured_at": "={{ $json[\"captured_at\"] ?? '' }}",
+            "status": "={{ $json[\"status\"] ?? '' }}",
+            "contact_id": "={{ $json[\"contact_id\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "contact_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "marketing_opt_in",
+              "displayName": "marketing_opt_in",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "do_not_contact",
+              "displayName": "do_not_contact",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "captured_at",
+              "displayName": "captured_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_id",
+              "displayName": "contact_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "038c35d0-8462-414a-9613-ca9ecc39887a",
+      "name": "Restore Save CRM_Contacts 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Prepare Form ke CRM\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "ce7017e2-8b8e-43ef-b448-9f2164948950",
+      "name": "Save CRM_Deals 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM_Deals",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "deal_id": "={{ $json[\"deal_id\"] ?? '' }}",
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "full_name": "={{ $json[\"full_name\"] ?? '' }}",
+            "email": "={{ $json[\"email\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "company": "={{ $json[\"company\"] ?? '' }}",
+            "owner_name": "={{ $json[\"owner_name\"] ?? '' }}",
+            "owner_wa": "={{ $json[\"owner_wa\"] ?? '' }}",
+            "stage": "={{ $json[\"stage\"] ?? '' }}",
+            "deal_value_idr": "={{ $json[\"deal_value_idr\"] ?? '' }}",
+            "marketing_opt_in": "={{ $json[\"marketing_opt_in\"] ?? '' }}",
+            "do_not_contact": "={{ $json[\"do_not_contact\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "deal_id"
+          ],
+          "schema": [
+            {
+              "id": "deal_id",
+              "displayName": "deal_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "owner_name",
+              "displayName": "owner_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "owner_wa",
+              "displayName": "owner_wa",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "deal_value_idr",
+              "displayName": "deal_value_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "marketing_opt_in",
+              "displayName": "marketing_opt_in",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "do_not_contact",
+              "displayName": "do_not_contact",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "84e222d4-f992-48a3-a667-6f26e9730a74",
+      "name": "Restore Save CRM_Deals 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Restore Save CRM_Contacts 3\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "d5eaf13e-62ed-4c87-9435-496f2ec6f004",
+      "name": "Send WhatsApp 7",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.owner_wa,message:'Deal baru '+$json.deal_id+': '+$json.full_name} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "d32df02e-ef25-4e0d-898c-c94cc9405543",
+      "name": "Check Fonnte result 8",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Restore Save CRM_Deals 5\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "cfeafbea-08c4-4866-aa75-8998a0839911",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Form ke CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Form ke CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Form ke CRM": {
+      "main": [
+        [
+          {
+            "node": "Save CRM_Contacts 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save CRM_Contacts 3": {
+      "main": [
+        [
+          {
+            "node": "Restore Save CRM_Contacts 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save CRM_Contacts 3": {
+      "main": [
+        [
+          {
+            "node": "Save CRM_Deals 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save CRM_Deals 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save CRM_Deals 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save CRM_Deals 5": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 7": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "a94c43ce-032d-48d7-a550-91879b94e951",
+  "pinData": {}
+}

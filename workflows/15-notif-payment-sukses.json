@@ -1,0 +1,524 @@
+{
+  "id": "revenue15",
+  "name": "15. Notif Payment Sukses",
+  "active": false,
+  "nodes": [
+    {
+      "id": "431bfe8b-5ef3-487b-b91c-efafe0351a41",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "8efac7c4-d30c-436b-be8b-45565ccf7d8c",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-15",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "webhookId": "b35a1d89-ab80-416c-982e-e9dfa535b850"
+    },
+    {
+      "id": "55fbf6f8-4fb8-4cb5-86f7-2ead5dea8e8f",
+      "name": "Prepare Notif Payment Sukses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function paymentRequest(raw) {\n  const order = String(need(raw.order_id, 'order_id'));\n  if (!/^[A-Za-z0-9_-]{1,64}$/.test(order)) throw new Error('Invalid order_id');\n  return { invoice_no: order };\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = paymentRequest(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "13864be7-1d9c-46cb-9c85-885422df81ea",
+      "name": "Verify Midtrans server status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"https://api.sandbox.midtrans.com\"+'/v2/'+encodeURIComponent($json.invoice_no)+'/status' }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "SET_Midtrans",
+          "name": "CONFIGURE: Midtrans"
+        }
+      }
+    },
+    {
+      "id": "9be050ee-3198-4146-8497-87d824c326bd",
+      "name": "Read Invoices_DB 4",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "invoice_no",
+              "lookupValue": "={{ $('Prepare Notif Payment Sukses').item.json.invoice_no }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "914eb028-caa6-45cc-91f1-589644207099",
+      "name": "Verify stored amount and settlement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function paid(verified, stored) {\n  if (!stored?.invoice_no) throw new Error('Unknown invoice');\n  if (verified.order_id !== stored.invoice_no) throw new Error('Payment invoice mismatch');\n  if (verified.currency && verified.currency !== 'IDR') throw new Error('Payment currency mismatch');\n  if (numeric(verified.gross_amount, 'provider amount', 1) !== numeric(stored.amount_idr, 'invoice amount', 1)) throw new Error('Payment amount mismatch');\n  const settled = verified.transaction_status === 'settlement' || (verified.transaction_status === 'capture' && verified.fraud_status === 'accept');\n  if (!settled || stored.payment_status === 'PAID') return null;\n  return { ...stored, payment_status: 'PAID', receipt_no: 'RCP-' + key(stored.invoice_no), paid_at: new Date().toISOString(), transaction_id: String(need(verified.transaction_id, 'verified transaction_id')), message: `Pembayaran ${stored.invoice_no}, ${formatMoney(stored.amount_idr)}, terkonfirmasi. Kuitansi ${'RCP-' + key(stored.invoice_no)}.` };\n}\nfunction formatMoney(n) { return 'Rp ' + Number(n).toLocaleString('id-ID'); }\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nreturn $input.all().flatMap((item,i)=>{const out=paid($('Verify Midtrans server status').itemMatching(i).json,item.json);return out?[{json:out,pairedItem:{item:i}}]:[];});"
+      }
+    },
+    {
+      "id": "292640da-458a-41bd-9266-0466c22a84e2",
+      "name": "Save Invoices_DB 6",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "invoice_no": "={{ $json[\"invoice_no\"] ?? '' }}",
+            "payment_status": "={{ $json[\"payment_status\"] ?? '' }}",
+            "receipt_no": "={{ $json[\"receipt_no\"] ?? '' }}",
+            "paid_at": "={{ $json[\"paid_at\"] ?? '' }}",
+            "transaction_id": "={{ $json[\"transaction_id\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "invoice_no"
+          ],
+          "schema": [
+            {
+              "id": "invoice_no",
+              "displayName": "invoice_no",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payment_status",
+              "displayName": "payment_status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "receipt_no",
+              "displayName": "receipt_no",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "paid_at",
+              "displayName": "paid_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "transaction_id",
+              "displayName": "transaction_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "c021cda0-8b6f-4e4b-afe3-b15c7f9f2753",
+      "name": "Restore Save Invoices_DB 6",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Verify stored amount and settlement\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "ee268628-9110-49ce-b908-189ceb224b9c",
+      "name": "Send WhatsApp 8",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "beef0cfe-7d46-4f2a-848f-1f852fd3e7b8",
+      "name": "Check Fonnte result 9",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Restore Save Invoices_DB 6\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "49cd12ef-738f-40d3-8adb-dd7fee00ec02",
+      "name": "Telegram alert 10",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ \"\" }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "SET_Telegram",
+          "name": "CONFIGURE: Telegram"
+        }
+      }
+    },
+    {
+      "id": "5a1f2b4b-5b2a-4d58-892c-cde1f32bcd65",
+      "name": "Restore Telegram alert 10",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2770,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 9\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "51d5b354-1ec5-4de1-a85f-5f4064c90aae",
+      "name": "Execute 16",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        3000,
+        400
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "revenue16",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "271a527e-ef24-436b-8770-eb83e06947d1",
+      "name": "Restore Execute 16",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3230,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Restore Telegram alert 10\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "0fddbf1c-e8bc-400b-9f20-d2ef34d64461",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3460,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notif Payment Sukses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notif Payment Sukses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notif Payment Sukses": {
+      "main": [
+        [
+          {
+            "node": "Verify Midtrans server status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Midtrans server status": {
+      "main": [
+        [
+          {
+            "node": "Read Invoices_DB 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Invoices_DB 4": {
+      "main": [
+        [
+          {
+            "node": "Verify stored amount and settlement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify stored amount and settlement": {
+      "main": [
+        [
+          {
+            "node": "Save Invoices_DB 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Invoices_DB 6": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Invoices_DB 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Invoices_DB 6": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 8": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 9": {
+      "main": [
+        [
+          {
+            "node": "Telegram alert 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram alert 10": {
+      "main": [
+        [
+          {
+            "node": "Restore Telegram alert 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Telegram alert 10": {
+      "main": [
+        [
+          {
+            "node": "Execute 16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute 16": {
+      "main": [
+        [
+          {
+            "node": "Restore Execute 16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "9ca70da8-2aff-4f55-b0a7-2c147cb0a883",
+  "pinData": {}
+}

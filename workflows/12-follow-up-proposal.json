@@ -1,0 +1,319 @@
+{
+  "id": "revenue12",
+  "name": "12. Follow-Up Proposal",
+  "active": false,
+  "nodes": [
+    {
+      "id": "72441e8b-1204-483e-bb0e-6a5b80953077",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "5c740b87-ff51-4dbf-b0e6-d9b1a817866e",
+      "name": "Read CRM_Deals 1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM_Deals",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "eb23f771-019a-4500-b6fc-c3609fcebaf5",
+      "name": "Select eligible contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function followup(raw, proposalMode = false) {\n  const d = contact(raw); if (!allowed(d) || !d.phone_e164) return null;\n  if (d.last_reply_at || ['CLOSED_WON', 'CLOSED_LOST', 'PAID'].includes(String(d.stage || d.status).toUpperCase())) return null;\n  if (proposalMode && d.stage !== 'PROPOSAL_SENT') return null;\n  const countField = proposalMode ? 'proposal_followup_count' : 'followup_count';\n  const count = numeric(d[countField] ?? 0, countField, 0, 3);\n  const cadence = proposalMode ? [2, 5, 10] : [1, 3, 7];\n  const sourceDate = proposalMode ? d.proposal_sent_at : d.captured_at;\n  if (!sourceDate || count >= cadence.length || days(sourceDate) < cadence[count]) return null;\n  if (d.last_followup_at && wibDate(d.last_followup_at) === wibDate()) return null;\n  return { ...d, [countField]: count + 1, last_followup_at: new Date().toISOString(), message: `Halo ${d.full_name || 'Kak'}, apakah Anda masih memerlukan bantuan${proposalMode ? ' untuk proposal ' + need(d.proposal_id, 'proposal_id') : ' terkait kebutuhan Anda'}? Balas STOP untuk berhenti.` };\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction wibDate(value = Date.now()) { return new Date(new Date(value).getTime() + 7 * 3600000).toISOString().slice(0, 10); }\nfunction allowed(row) { return flag(row.marketing_opt_in) && !flag(row.do_not_contact) && !['DNC', 'UNSUBSCRIBED'].includes(String(row.status).toUpperCase()); }\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction days(value) {\n  const ms = new Date(need(value, 'date')).getTime();\n  if (!Number.isFinite(ms)) throw new Error('Invalid date');\n  return Math.floor((Date.now() - ms) / 86400000);\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction flag(value) { return value === true || value === 'true' || value === 1 || value === '1'; }\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = followup(d,true); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "28d977bc-3798-436f-91c1-f080acbc775d",
+      "name": "Send WhatsApp 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "37ff2f2b-7e41-4793-bb24-cdaf8d44383c",
+      "name": "Check Fonnte result 4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Select eligible contacts\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "90ef895f-4cc6-42c7-ae0d-c98f9bf38826",
+      "name": "Save CRM_Deals 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM_Deals",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "deal_id": "={{ $json[\"deal_id\"] ?? '' }}",
+            "proposal_followup_count": "={{ $json[\"proposal_followup_count\"] ?? '' }}",
+            "last_followup_at": "={{ $json[\"last_followup_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "deal_id"
+          ],
+          "schema": [
+            {
+              "id": "deal_id",
+              "displayName": "deal_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "proposal_followup_count",
+              "displayName": "proposal_followup_count",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_followup_at",
+              "displayName": "last_followup_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "1b5223d5-1d17-4698-a60d-94706bd91f81",
+      "name": "Restore Save CRM_Deals 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 4\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "71f05d8c-7e4d-40cd-8e55-a4d1f86753f2",
+      "name": "Schedule WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0cabdbb8-5364-4c6c-b62b-bda6099594bc",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Read CRM_Deals 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read CRM_Deals 1": {
+      "main": [
+        [
+          {
+            "node": "Select eligible contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select eligible contacts": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 3": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 4": {
+      "main": [
+        [
+          {
+            "node": "Save CRM_Deals 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save CRM_Deals 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save CRM_Deals 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule WIB": {
+      "main": [
+        [
+          {
+            "node": "Read CRM_Deals 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "e9774999-2ae5-4960-bfe4-a34202229d1d",
+  "pinData": {}
+}

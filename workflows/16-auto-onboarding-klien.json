@@ -1,0 +1,698 @@
+{
+  "id": "revenue16",
+  "name": "16. Onboarding Klien",
+  "active": false,
+  "nodes": [
+    {
+      "id": "bba4c7c0-8fc6-4383-8051-e1a9a7e432f1",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "5d7dc114-4fa0-4be2-868c-0ede6611d37d",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-16",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "61edefb5-b692-44f7-8116-b256f8ecf496",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "4dae7026-4d49-4e1f-9c10-a11dd16b49d4",
+      "name": "Read Invoices_DB 2",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "invoice_no",
+              "lookupValue": "={{ $json.body?.invoice_no || $json.invoice_no }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "b15a0ebd-83e8-481c-8677-0cc107784f37",
+      "name": "Prepare Onboarding Klien",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function onboarding(raw) {\n  const d = contact(raw); need(d.invoice_no, 'invoice_no'); need(d.email, 'email');\n  if (d.payment_status !== 'PAID') throw new Error('Paid invoice required');\n  const localDay = new Date(Date.parse(wibDate()));\n  for(let workingDays=0;workingDays<2;){localDay.setUTCDate(localDay.getUTCDate()+1);if(![0,6].includes(localDay.getUTCDay()))workingDays++;}\n  return { ...d, lead_id:d.lead_id || 'LD-'+key(d.phone_e164 || d.email), project_id: 'PRJ-' + key(d.invoice_no), folder_name: 'Proyek ' + String(d.company || d.full_name), status: 'ONBOARDING', created_at: new Date().toISOString(), preferred_datetime:localDay.toISOString().slice(0,10)+'T10:00:00+07:00',duration_minutes:45,agenda:'Kickoff proyek '+String(d.company || d.full_name) };\n}\nfunction wibDate(value = Date.now()) { return new Date(new Date(value).getTime() + 7 * 3600000).toISOString().slice(0, 10); }\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = onboarding(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "9df35258-533c-4156-bb1c-88c720fb3e1e",
+      "name": "Read Projects_DB 4",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Projects_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "project_id",
+              "lookupValue": "={{ $json.project_id }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "551decfb-833b-463f-9896-2d6f52a0b97e",
+      "name": "Skip existing project",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst d=$(\"Prepare Onboarding Klien\").first().json;return $input.all().some(i=>i.json.project_id===d.project_id)?[]:[{json:d}];"
+      }
+    },
+    {
+      "id": "b5aa98b4-a3a2-4641-8e41-caa655bdf756",
+      "name": "Create client folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "resource": "folder",
+        "operation": "create",
+        "name": "={{ $json.folder_name }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "SET_Google_Drive",
+          "name": "CONFIGURE: Google Drive"
+        }
+      }
+    },
+    {
+      "id": "57d983c9-4a97-4acb-8f08-77d43a360620",
+      "name": "Use created folder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function onboarded(d, folder) {\n  need(folder.id, 'created Drive folder ID');\n  return { ...d, drive_folder_id: folder.id, drive_folder_url: 'https://drive.google.com/drive/folders/' + encodeURIComponent(folder.id), message: `Selamat datang, ${d.full_name || 'Kak'}. Folder proyek ${d.project_id}: https://drive.google.com/drive/folders/${encodeURIComponent(folder.id)}. Tim akan mengatur akses dan jadwal kickoff bersama Anda.` };\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = onboarded($('Skip existing project').itemMatching(i).json,d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "f1317b73-d227-40c0-9e6b-204e8e9911b0",
+      "name": "Save Projects_DB 8",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Projects_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "project_id": "={{ $json[\"project_id\"] ?? '' }}",
+            "invoice_no": "={{ $json[\"invoice_no\"] ?? '' }}",
+            "full_name": "={{ $json[\"full_name\"] ?? '' }}",
+            "email": "={{ $json[\"email\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "company": "={{ $json[\"company\"] ?? '' }}",
+            "status": "={{ $json[\"status\"] ?? '' }}",
+            "package_tier": "={{ $json[\"package_tier\"] ?? '' }}",
+            "drive_folder_id": "={{ $json[\"drive_folder_id\"] ?? '' }}",
+            "drive_folder_url": "={{ $json[\"drive_folder_url\"] ?? '' }}",
+            "created_at": "={{ $json[\"created_at\"] ?? '' }}",
+            "marketing_opt_in": "={{ $json[\"marketing_opt_in\"] ?? '' }}",
+            "do_not_contact": "={{ $json[\"do_not_contact\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "project_id"
+          ],
+          "schema": [
+            {
+              "id": "project_id",
+              "displayName": "project_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "invoice_no",
+              "displayName": "invoice_no",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "package_tier",
+              "displayName": "package_tier",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "drive_folder_id",
+              "displayName": "drive_folder_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "drive_folder_url",
+              "displayName": "drive_folder_url",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "marketing_opt_in",
+              "displayName": "marketing_opt_in",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "do_not_contact",
+              "displayName": "do_not_contact",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "54856458-e3ca-4a54-9e18-ca9bbb59c0d1",
+      "name": "Restore Save Projects_DB 8",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Use created folder\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "6ccc54c7-4d9f-46ba-aace-0b259ab3763b",
+      "name": "Execute 06",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "revenue06",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "0efe70ce-d067-4175-b2d2-9f02262f7ce8",
+      "name": "Restore Execute 06",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2770,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Restore Save Projects_DB 8\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "d1e1cd52-529f-4f69-aba0-fdb1e372c52b",
+      "name": "Send WhatsApp 12",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3000,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "19107891-3c4d-4a73-b597-7d562b8b65be",
+      "name": "Check Fonnte result 13",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3230,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Restore Execute 06\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "8980f532-44b4-4395-a740-ca93a7ca1eab",
+      "name": "Send email 14",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3460,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ 'Onboarding '+$json.project_id }}",
+        "emailType": "html",
+        "message": "={{ '<p>'+ $json.message.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</p>' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "SET_Gmail",
+          "name": "CONFIGURE: Gmail"
+        }
+      }
+    },
+    {
+      "id": "13576294-b4f2-4f3a-aa3c-58ff48b182d2",
+      "name": "Restore Send email 14",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3690,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 13\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "d9f335c5-6e7c-4db5-8f4a-ece007e0d9e9",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Read Invoices_DB 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Invoices_DB 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Invoices_DB 2": {
+      "main": [
+        [
+          {
+            "node": "Prepare Onboarding Klien",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Onboarding Klien": {
+      "main": [
+        [
+          {
+            "node": "Read Projects_DB 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Projects_DB 4": {
+      "main": [
+        [
+          {
+            "node": "Skip existing project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip existing project": {
+      "main": [
+        [
+          {
+            "node": "Create client folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create client folder": {
+      "main": [
+        [
+          {
+            "node": "Use created folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use created folder": {
+      "main": [
+        [
+          {
+            "node": "Save Projects_DB 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Projects_DB 8": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Projects_DB 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Projects_DB 8": {
+      "main": [
+        [
+          {
+            "node": "Execute 06",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute 06": {
+      "main": [
+        [
+          {
+            "node": "Restore Execute 06",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Execute 06": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 12": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 13": {
+      "main": [
+        [
+          {
+            "node": "Send email 14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email 14": {
+      "main": [
+        [
+          {
+            "node": "Restore Send email 14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "186aae80-060b-4cac-98f6-314fd97e8876",
+  "pinData": {}
+}

@@ -1,0 +1,518 @@
+{
+  "id": "revenue01",
+  "name": "01. Auto Lead Capture",
+  "active": false,
+  "nodes": [
+    {
+      "id": "7d380e8d-9298-4573-8b26-d3c4e753f2c4",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "0cac7b7a-a927-4c7f-b67e-56984f95c75b",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-01",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "47fc55d4-627b-40d5-af1c-1e811312758c",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "4111c3a1-d3bd-48ec-ad68-689d1f42a44b",
+      "name": "Prepare Auto Lead Capture",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function capture(raw) {\n  const d = contact(raw);\n  if (!d.phone_e164 && !d.email) throw new Error('Valid phone or email required');\n  return { ...d, lead_id: 'LD-' + key(d.phone_e164 || d.email), status: 'NEW', captured_at: new Date().toISOString(), marketing_opt_in: flag(d.marketing_opt_in), do_not_contact: flag(d.do_not_contact) };\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction flag(value) { return value === true || value === 'true' || value === 1 || value === '1'; }\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = capture(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "8925c907-17b0-44ed-b6b9-8c6ca41432bc",
+      "name": "Read Leads_DB 3",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "lead_id",
+              "lookupValue": "={{ $json.lead_id }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "efc3995b-5c42-4699-bc69-ff34d1e0a63d",
+      "name": "Skip existing lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst d=$(\"Prepare Auto Lead Capture\").first().json; return $input.all().some(x=>x.json.lead_id===d.lead_id) ? [] : [{json:d}];"
+      }
+    },
+    {
+      "id": "409843c8-2fda-4954-9f1b-42a47ee81609",
+      "name": "Save Leads_DB 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "full_name": "={{ $json[\"full_name\"] ?? '' }}",
+            "email": "={{ $json[\"email\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "company": "={{ $json[\"company\"] ?? '' }}",
+            "marketing_opt_in": "={{ $json[\"marketing_opt_in\"] ?? '' }}",
+            "do_not_contact": "={{ $json[\"do_not_contact\"] ?? '' }}",
+            "captured_at": "={{ $json[\"captured_at\"] ?? '' }}",
+            "status": "={{ $json[\"status\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "marketing_opt_in",
+              "displayName": "marketing_opt_in",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "do_not_contact",
+              "displayName": "do_not_contact",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "captured_at",
+              "displayName": "captured_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "e32a700f-7814-49e9-8bf7-7f2ccca642f6",
+      "name": "Restore Save Leads_DB 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Skip existing lead\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "74dafa03-2a0f-4d36-8324-4ed1c47c90db",
+      "name": "Can greet WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "78fbdd5c-7970-4b51-809e-f62ebacd7dc8",
+              "leftValue": "={{ !!$json.phone_e164 && $json.marketing_opt_in === true && $json.do_not_contact !== true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a3cee7a6-1681-41ca-92d8-b8d77cb8e012",
+      "name": "Execute 02",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "revenue02",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "fbadb52d-a3ea-4578-8861-eed1725003f8",
+      "name": "Restore Execute 02",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Can greet WhatsApp?\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "93876d84-457c-4612-b361-017f78d7f320",
+      "name": "Execute 03",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "revenue03",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "81e7800a-0109-43d7-ae8c-f0fa2e7f6d86",
+      "name": "Restore Execute 03",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2770,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Restore Execute 02\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "a6d08f7f-3c4a-4cb4-ab0c-896642d2e211",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3000,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Auto Lead Capture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Auto Lead Capture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Auto Lead Capture": {
+      "main": [
+        [
+          {
+            "node": "Read Leads_DB 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads_DB 3": {
+      "main": [
+        [
+          {
+            "node": "Skip existing lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip existing lead": {
+      "main": [
+        [
+          {
+            "node": "Save Leads_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Leads_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Leads_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Leads_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Can greet WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can greet WhatsApp?": {
+      "main": [
+        [
+          {
+            "node": "Execute 02",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute 03",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute 02": {
+      "main": [
+        [
+          {
+            "node": "Restore Execute 02",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Execute 02": {
+      "main": [
+        [
+          {
+            "node": "Execute 03",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute 03": {
+      "main": [
+        [
+          {
+            "node": "Restore Execute 03",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "d348e54c-effb-41e2-ab8a-719fb9a237d5",
+  "pinData": {}
+}

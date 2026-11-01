@@ -1,0 +1,19 @@
+{
+  "GSHEET_CRM_ID": "",
+  "GEMINI_MODEL": "models/gemini-3.8-flash",
+  "CALENDAR_ID": "primary",
+  "REPORT_RECIPIENT_EMAIL": "",
+  "TELEGRAM_SALES_CHAT_ID": "",
+  "SALES_OWNER_WA": "",
+  "SALES_MANAGER_WA": "",
+  "SALES_ROSTER_JSON": "[]",
+  "SERVICE_CATALOG_JSON": "{}",
+  "UPGRADE_CATALOG_JSON": "{}",
+  "COMPETITOR_WATCHLIST_JSON": "[]",
+  "GOOGLE_REVIEW_URL": "",
+  "META_GRAPH_VERSION": "",
+  "QUOTE_TAX_RATE": "",
+  "QUOTE_DISCOUNT_PCT": "0",
+  "MIDTRANS_SNAP_BASE_URL": "https://app.sandbox.midtrans.com",
+  "MIDTRANS_API_BASE_URL": "https://api.sandbox.midtrans.com"
+}

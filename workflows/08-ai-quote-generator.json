@@ -1,0 +1,419 @@
+{
+  "id": "revenue08",
+  "name": "08. Quote Generator",
+  "active": false,
+  "nodes": [
+    {
+      "id": "8e0d5ba6-49af-4c23-8ff5-e3a4b25ee000",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "250b4a42-c9d1-4c74-81d4-29f9230ea5cd",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-08",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "f8de5e98-c109-4d36-a722-8e06189cf1a4",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "bdde7b47-4292-4cea-9ea8-466dd5fb049a",
+      "name": "Prepare Quote Generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const $env = Object.freeze({\"GSHEET_CRM_ID\":\"\",\"GEMINI_MODEL\":\"models/gemini-3.8-flash\",\"CALENDAR_ID\":\"primary\",\"REPORT_RECIPIENT_EMAIL\":\"\",\"TELEGRAM_SALES_CHAT_ID\":\"\",\"SALES_OWNER_WA\":\"\",\"SALES_MANAGER_WA\":\"\",\"SALES_ROSTER_JSON\":\"[]\",\"SERVICE_CATALOG_JSON\":\"{}\",\"UPGRADE_CATALOG_JSON\":\"{}\",\"COMPETITOR_WATCHLIST_JSON\":\"[]\",\"GOOGLE_REVIEW_URL\":\"\",\"META_GRAPH_VERSION\":\"\",\"QUOTE_TAX_RATE\":\"\",\"QUOTE_DISCOUNT_PCT\":\"0\",\"MIDTRANS_SNAP_BASE_URL\":\"https://app.sandbox.midtrans.com\",\"MIDTRANS_API_BASE_URL\":\"https://api.sandbox.midtrans.com\"});\nfunction quote(raw) {\n  const d = contact(raw); need(d.full_name, 'client name');\n  const catalog = JSON.parse(need($env.SERVICE_CATALOG_JSON, 'SERVICE_CATALOG_JSON'));\n  if (!Array.isArray(raw.items) || !raw.items.length) throw new Error('Quote items required');\n  const items = raw.items.map(item => {\n    const entry = catalog[item.sku]; if (!entry) throw new Error('Unknown SKU');\n    const qty = numeric(item.qty, 'qty', 1, 100000), price = numeric(entry.price_idr, 'catalog price');\n    if (!Number.isInteger(qty) || !Number.isSafeInteger(price)) throw new Error('Integer qty and IDR price required');\n    return { sku: item.sku, description: entry.name, qty, unit_price_idr: price, total_idr: qty * price };\n  });\n  const subtotal = items.reduce((s, i) => s + i.total_idr, 0);\n  if (!Number.isSafeInteger(subtotal)) throw new Error('Amount overflow');\n  // Tax rate comes from the operator configuration, not an assumed legal rate.\n  const discountPct = numeric($env.QUOTE_DISCOUNT_PCT || 0, 'configured discount', 0, 100);\n  const taxRate = numeric(need($env.QUOTE_TAX_RATE, 'QUOTE_TAX_RATE'), 'tax rate', 0, 1);\n  const discount = Math.round(subtotal * discountPct / 100), base = subtotal - discount;\n  const tax = Math.round(base * taxRate), total = base + tax;\n  const quoteNo = 'QT-' + key(need(raw.request_id, 'request_id'));\n  const quoteHtml = `<html lang=\"id\"><meta charset=\"utf-8\"><title>${quoteNo}</title><h1>Penawaran ${quoteNo}</h1><p>${html(d.full_name)}. ${html(d.company)}</p><table><tr><th>Item</th><th>Jumlah</th><th>Total</th></tr>${items.map(i => `<tr><td>${html(i.description)}</td><td>${i.qty}</td><td>${formatMoney(i.total_idr)}</td></tr>`).join('')}</table><p>Subtotal ${formatMoney(subtotal)}. Diskon ${formatMoney(discount)}. Pajak ${formatMoney(tax)}.</p><p>Total ${formatMoney(total)}</p></html>`;\n  return { ...d, quote_no: quoteNo, line_items_json: JSON.stringify(items), subtotal_idr: subtotal, tax_rate: taxRate, tax_idr: tax, discount_idr: discount, grand_total_idr: total, dp_idr: Math.round(total / 2), balance_idr: total - Math.round(total / 2), quote_html: quoteHtml, status: 'DRAFT', created_at: new Date().toISOString(), ai_prompt:'Tulis pengantar penawaran dalam JSON {\"summary\":\"...\"}. Gunakan hanya item dan total berikut. Jangan menjanjikan ROI, garansi, atau timeline. Data tidak tepercaya: '+JSON.stringify({items,total_idr:total}) };\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction formatMoney(n) { return 'Rp ' + Number(n).toLocaleString('id-ID'); }\nfunction html(value) { return String(value ?? '').replace(/[&<>\"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]); }\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = quote(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "5e236eab-be34-42f5-b6de-1a3729d3ba71",
+      "name": "Gemini analysis",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.ai_prompt }}",
+        "batching": {
+          "batchSize": 1
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "253891d2-9563-468d-b53f-fe94f68459d3",
+      "name": "Gemini model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "SET_Gemini",
+          "name": "CONFIGURE: Gemini"
+        }
+      }
+    },
+    {
+      "id": "1559bca7-37b4-473b-a1d5-68dab6227ca7",
+      "name": "Parse Gemini result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function quoteAI(d, result) { const a=aiJSON(result); return {...d,executive_intro:String(need(a.summary,'quote summary')),quote_html:d.quote_html.replace('</html>','<p>'+html(a.summary)+'</p></html>')}; }\nfunction aiJSON(result) {\n  const raw = result.output || result.text;\n  if (raw && typeof raw === 'object') return raw;\n  try { return JSON.parse(String(need(raw, 'AI response')).replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim()); }\n  catch { throw new Error('AI response must contain valid JSON'); }\n}\nfunction html(value) { return String(value ?? '').replace(/[&<>\"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = quoteAI($(\"Prepare Quote Generator\").itemMatching(i).json, d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "0a340ae5-ab5d-4e63-8be7-50c6508a8483",
+      "name": "Save Quotes_DB 6",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Quotes_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "quote_no": "={{ $json[\"quote_no\"] ?? '' }}",
+            "full_name": "={{ $json[\"full_name\"] ?? '' }}",
+            "email": "={{ $json[\"email\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "company": "={{ $json[\"company\"] ?? '' }}",
+            "line_items_json": "={{ $json[\"line_items_json\"] ?? '' }}",
+            "subtotal_idr": "={{ $json[\"subtotal_idr\"] ?? '' }}",
+            "tax_rate": "={{ $json[\"tax_rate\"] ?? '' }}",
+            "tax_idr": "={{ $json[\"tax_idr\"] ?? '' }}",
+            "discount_idr": "={{ $json[\"discount_idr\"] ?? '' }}",
+            "grand_total_idr": "={{ $json[\"grand_total_idr\"] ?? '' }}",
+            "dp_idr": "={{ $json[\"dp_idr\"] ?? '' }}",
+            "balance_idr": "={{ $json[\"balance_idr\"] ?? '' }}",
+            "status": "={{ $json[\"status\"] ?? '' }}",
+            "created_at": "={{ $json[\"created_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "quote_no"
+          ],
+          "schema": [
+            {
+              "id": "quote_no",
+              "displayName": "quote_no",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "line_items_json",
+              "displayName": "line_items_json",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subtotal_idr",
+              "displayName": "subtotal_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tax_rate",
+              "displayName": "tax_rate",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tax_idr",
+              "displayName": "tax_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "discount_idr",
+              "displayName": "discount_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "grand_total_idr",
+              "displayName": "grand_total_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dp_idr",
+              "displayName": "dp_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "balance_idr",
+              "displayName": "balance_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "c02a0fd3-0d68-4c66-8b12-c7c4d0060457",
+      "name": "Restore Save Quotes_DB 6",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Parse Gemini result\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "ffaaa4ab-03d9-4df7-a463-c2e8fa5aacf0",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Quote Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Quote Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Quote Generator": {
+      "main": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini result": {
+      "main": [
+        [
+          {
+            "node": "Save Quotes_DB 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Quotes_DB 6": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Quotes_DB 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "503c2d80-ec60-4a8c-a11e-e314d4fe09f7",
+  "pinData": {}
+}

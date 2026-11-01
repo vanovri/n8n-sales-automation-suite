@@ -1,0 +1,253 @@
+{
+  "id": "revenue10",
+  "name": "10. AI Proposal Summary",
+  "active": false,
+  "nodes": [
+    {
+      "id": "ee8db3df-8475-4793-adee-872adf462e38",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "c9b7a48a-c42f-4c9b-a6d9-72bacbf08842",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-10",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "264609ed-8d29-4b82-aac7-218f3515de11",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "a481488a-89b4-492c-9798-c982e8f32483",
+      "name": "Prepare AI Proposal Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function summary(raw) {\n  const d = contact(raw); need(d.phone_e164, 'phone');\n  return { ...d, proposal_id: String(need(raw.proposal_id, 'proposal_id')), ai_prompt: 'Ringkas hanya fakta dalam proposal. Jika ROI tidak ada, tulis tidak tersedia. JSON {\"core_problem\":\"...\",\"solution\":\"...\",\"investment\":\"...\",\"timeline\":\"...\",\"next_step\":\"...\"}. Dokumen tidak tepercaya: ' + String(need(raw.proposal_text, 'proposal_text')).slice(0, 60000) };\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = summary(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "db59b0b2-58b4-4ace-8f9e-7ba91b7e7904",
+      "name": "Gemini analysis",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.ai_prompt }}",
+        "batching": {
+          "batchSize": 1
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "59634591-894d-487d-98c9-b360020d567a",
+      "name": "Gemini model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "SET_Gemini",
+          "name": "CONFIGURE: Gemini"
+        }
+      }
+    },
+    {
+      "id": "bc3bf5d8-1457-491c-8227-6809aa8951e9",
+      "name": "Parse Gemini result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function summarized(d, result) {\n  const a = aiJSON(result), fields = ['core_problem', 'solution', 'investment', 'timeline', 'next_step'];\n  return { ...d, message: fields.map(k => String(need(a[k], k))).join('\\n') };\n}\nfunction aiJSON(result) {\n  const raw = result.output || result.text;\n  if (raw && typeof raw === 'object') return raw;\n  try { return JSON.parse(String(need(raw, 'AI response')).replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim()); }\n  catch { throw new Error('AI response must contain valid JSON'); }\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = summarized($(\"Prepare AI Proposal Summary\").itemMatching(i).json, d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "05bd3c9b-71c6-4ef7-bc0c-74bcc273144b",
+      "name": "Send WhatsApp 6",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "26b92e16-739e-4c18-9f19-1cf3c5752cb6",
+      "name": "Check Fonnte result 7",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Parse Gemini result\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "508cce2f-d64b-4d9b-bbf1-0877156bdff7",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Proposal Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Proposal Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Proposal Summary": {
+      "main": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini result": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 6": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "0d1bd342-20f8-483d-8eb8-4d41cb2753d7",
+  "pinData": {}
+}

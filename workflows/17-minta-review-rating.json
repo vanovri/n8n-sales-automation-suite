@@ -1,0 +1,512 @@
+{
+  "id": "revenue17",
+  "name": "17. Review dan Rating",
+  "active": false,
+  "nodes": [
+    {
+      "id": "b4d6d07b-8561-43c4-87a2-32e21a4e4879",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "ad44b8cc-c8ad-4aa2-92eb-fe421ea63656",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-17",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "2002fbe6-6cad-40b1-8d5b-4e147f07a784",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "e2c81813-8fde-4573-9c14-047d70f6b387",
+      "name": "Prepare Review dan Rating",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const $env = Object.freeze({\"GSHEET_CRM_ID\":\"\",\"GEMINI_MODEL\":\"models/gemini-3.8-flash\",\"CALENDAR_ID\":\"primary\",\"REPORT_RECIPIENT_EMAIL\":\"\",\"TELEGRAM_SALES_CHAT_ID\":\"\",\"SALES_OWNER_WA\":\"\",\"SALES_MANAGER_WA\":\"\",\"SALES_ROSTER_JSON\":\"[]\",\"SERVICE_CATALOG_JSON\":\"{}\",\"UPGRADE_CATALOG_JSON\":\"{}\",\"COMPETITOR_WATCHLIST_JSON\":\"[]\",\"GOOGLE_REVIEW_URL\":\"\",\"META_GRAPH_VERSION\":\"\",\"QUOTE_TAX_RATE\":\"\",\"QUOTE_DISCOUNT_PCT\":\"0\",\"MIDTRANS_SNAP_BASE_URL\":\"https://app.sandbox.midtrans.com\",\"MIDTRANS_API_BASE_URL\":\"https://api.sandbox.midtrans.com\"});\nfunction review(raw) {\n  const d = contact(raw), rating = numeric(raw.rating_score ?? raw.rating, 'CSAT rating', 1, 5);\n  if (!Number.isInteger(rating)) throw new Error('Integer CSAT rating required');\n  need(d.project_id, 'project_id');\n  // The same voluntary review invitation goes to every score, without incentives.\n  const link = url($env.GOOGLE_REVIEW_URL, 'GOOGLE_REVIEW_URL');\n  return { ...d, review_id: 'RV-' + key(need(raw.request_id, 'request_id')), rating_score: rating, feedback: String(raw.feedback || ''), recovery_needed: rating <= 3, submitted_at: new Date().toISOString(), message: `Terima kasih atas masukan Anda (${rating}/5). Jika berkenan, tulis pengalaman Anda dengan kata-kata sendiri: ${link}` };\n}\nfunction url(value, name) {\n  const s = String(need(value, name));\n  if (!/^https:\\/\\/[^\\s<>\"']+$/i.test(s)) throw new Error('Invalid HTTPS URL: ' + name);\n  return s;\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = review(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "8674388b-1a86-47a0-80fc-3a1b5df2f1ea",
+      "name": "Save Reviews_DB 3",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Reviews_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "review_id": "={{ $json[\"review_id\"] ?? '' }}",
+            "project_id": "={{ $json[\"project_id\"] ?? '' }}",
+            "rating_score": "={{ $json[\"rating_score\"] ?? '' }}",
+            "feedback": "={{ $json[\"feedback\"] ?? '' }}",
+            "recovery_needed": "={{ $json[\"recovery_needed\"] ?? '' }}",
+            "submitted_at": "={{ $json[\"submitted_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "review_id"
+          ],
+          "schema": [
+            {
+              "id": "review_id",
+              "displayName": "review_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "project_id",
+              "displayName": "project_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rating_score",
+              "displayName": "rating_score",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "feedback",
+              "displayName": "feedback",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recovery_needed",
+              "displayName": "recovery_needed",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "d30ba1ca-de6c-4a3d-a0e5-ee9ea56d71f7",
+      "name": "Restore Save Reviews_DB 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Prepare Review dan Rating\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "882effe0-14ad-4cbe-8661-3ac30a3f2786",
+      "name": "Save Projects_DB 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Projects_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "project_id": "={{ $json[\"project_id\"] ?? '' }}",
+            "rating_score": "={{ $json[\"rating_score\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "project_id"
+          ],
+          "schema": [
+            {
+              "id": "project_id",
+              "displayName": "project_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rating_score",
+              "displayName": "rating_score",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "9a8c6605-6cd6-4794-b195-6f6d07f5af40",
+      "name": "Restore Save Projects_DB 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Restore Save Reviews_DB 3\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "a6917f8d-0ad0-4ded-aece-16a459e452f3",
+      "name": "Send WhatsApp 7",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "e54a8891-9120-4f62-88b5-f3c34f824619",
+      "name": "Check Fonnte result 8",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Restore Save Projects_DB 5\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "77d5a63e-1ea3-4c11-a284-9ee2b63e2b05",
+      "name": "Service recovery needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3703ec20-c0c3-4140-8547-cbce14889642",
+              "leftValue": "={{ $json.recovery_needed === true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8b4893bc-c8cf-428f-9f95-a9c99521377b",
+      "name": "Telegram alert 10",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ \"\" }}",
+        "text": "={{ 'CSAT '+$json.rating_score+'/5. Project '+$json.project_id+'. '+$json.feedback }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "SET_Telegram",
+          "name": "CONFIGURE: Telegram"
+        }
+      }
+    },
+    {
+      "id": "d12806ea-53c4-4564-9216-81ddfa8a5e37",
+      "name": "Restore Telegram alert 10",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2770,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Service recovery needed?\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "015ddd3c-1560-4c2b-9d8c-da719880946c",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3000,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Review dan Rating",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Review dan Rating",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Review dan Rating": {
+      "main": [
+        [
+          {
+            "node": "Save Reviews_DB 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Reviews_DB 3": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Reviews_DB 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Reviews_DB 3": {
+      "main": [
+        [
+          {
+            "node": "Save Projects_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Projects_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Projects_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Projects_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 7": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 8": {
+      "main": [
+        [
+          {
+            "node": "Service recovery needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Service recovery needed?": {
+      "main": [
+        [
+          {
+            "node": "Telegram alert 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram alert 10": {
+      "main": [
+        [
+          {
+            "node": "Restore Telegram alert 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "41c11830-c4aa-4df7-9c9c-1fba58fcf387",
+  "pinData": {}
+}

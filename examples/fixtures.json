@@ -1,0 +1,259 @@
+{
+  "scope": "Synthetic fixtures only. Do not send to real services.",
+  "workflows": [
+    {
+      "id": "revenue00",
+      "input": {
+        "event_type": "quote.create",
+        "payload": {
+          "full_name": "Synthetic Client",
+          "email": "client@example.test",
+          "phone": "081234567890",
+          "company": "Synthetic Co",
+          "marketing_opt_in": true,
+          "do_not_contact": false,
+          "request_id": "quote",
+          "items": [
+            {
+              "sku": "TEST",
+              "qty": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "revenue01",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false
+      }
+    },
+    {
+      "id": "revenue02",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "NEW",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85
+      }
+    },
+    {
+      "id": "revenue03",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "NEW",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85
+      }
+    },
+    {
+      "id": "revenue04",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "request_id": "form"
+      }
+    },
+    {
+      "id": "revenue05",
+      "input": {
+        "from": "081234567890",
+        "text": "Harga?",
+        "channel": "WHATSAPP"
+      }
+    },
+    {
+      "id": "revenue06",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "NEW",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85,
+        "preferred_datetime": "2026-11-03T10:00:00+07:00"
+      }
+    },
+    {
+      "id": "revenue07",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "NEW",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85
+      }
+    },
+    {
+      "id": "revenue08",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "request_id": "quote",
+        "items": [
+          {
+            "sku": "TEST",
+            "qty": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "revenue09",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "NEW",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85,
+        "deal_id": "DL-TEST",
+        "proposal_id": "PROP-TEST",
+        "stage": "PROPOSAL_SENT",
+        "proposal_sent_at": "2026-10-20T03:00:00Z",
+        "deal_value_idr": 1000000,
+        "created_at": "2026-11-01T03:00:00Z",
+        "proposal_url": "https://example.test/proposal"
+      }
+    },
+    {
+      "id": "revenue10",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "NEW",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85,
+        "proposal_id": "PROP-TEST",
+        "proposal_text": "Synthetic scope"
+      }
+    },
+    {
+      "id": "revenue11",
+      "input": {}
+    },
+    {
+      "id": "revenue12",
+      "input": {}
+    },
+    {
+      "id": "revenue13",
+      "input": {}
+    },
+    {
+      "id": "revenue14",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "NEW",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85,
+        "invoice_no": "INV-TEST",
+        "amount_idr": 1000000,
+        "due_date": "2026-11-02",
+        "payment_status": "UNPAID",
+        "payment_url": "https://example.test/pay"
+      }
+    },
+    {
+      "id": "revenue15",
+      "input": {
+        "order_id": "INV-TEST"
+      }
+    },
+    {
+      "id": "revenue16",
+      "input": {
+        "invoice_no": "INV-TEST"
+      }
+    },
+    {
+      "id": "revenue17",
+      "input": {
+        "full_name": "Synthetic Client",
+        "email": "client@example.test",
+        "phone": "081234567890",
+        "company": "Synthetic Co",
+        "marketing_opt_in": true,
+        "do_not_contact": false,
+        "phone_e164": "6281234567890",
+        "lead_id": "LD-dd752605096029a73495a918",
+        "status": "ACTIVE",
+        "captured_at": "2026-10-01T03:00:00Z",
+        "lead_score": 85,
+        "project_id": "PRJ-TEST",
+        "invoice_no": "INV-TEST",
+        "package_tier": "STARTER_WA",
+        "rating_score": 2,
+        "request_id": "review"
+      }
+    },
+    {
+      "id": "revenue18",
+      "input": {}
+    },
+    {
+      "id": "revenue19",
+      "input": {}
+    },
+    {
+      "id": "revenue20",
+      "input": {}
+    }
+  ]
+}

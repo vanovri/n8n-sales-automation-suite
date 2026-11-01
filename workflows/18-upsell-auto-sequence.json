@@ -1,0 +1,509 @@
+{
+  "id": "revenue18",
+  "name": "18. Upsell Sequence",
+  "active": false,
+  "nodes": [
+    {
+      "id": "d9bc3b0a-0722-4f9e-ae39-25b653526d01",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "c1d65f06-1317-4630-a4f0-5a0c42ba16e8",
+      "name": "Read Projects_DB 1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Projects_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "41453518-a7c3-4fc6-8a7f-1921f1a17146",
+      "name": "Prepare Upsell Sequence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const $env = Object.freeze({\"GSHEET_CRM_ID\":\"\",\"GEMINI_MODEL\":\"models/gemini-3.8-flash\",\"CALENDAR_ID\":\"primary\",\"REPORT_RECIPIENT_EMAIL\":\"\",\"TELEGRAM_SALES_CHAT_ID\":\"\",\"SALES_OWNER_WA\":\"\",\"SALES_MANAGER_WA\":\"\",\"SALES_ROSTER_JSON\":\"[]\",\"SERVICE_CATALOG_JSON\":\"{}\",\"UPGRADE_CATALOG_JSON\":\"{}\",\"COMPETITOR_WATCHLIST_JSON\":\"[]\",\"GOOGLE_REVIEW_URL\":\"\",\"META_GRAPH_VERSION\":\"\",\"QUOTE_TAX_RATE\":\"\",\"QUOTE_DISCOUNT_PCT\":\"0\",\"MIDTRANS_SNAP_BASE_URL\":\"https://app.sandbox.midtrans.com\",\"MIDTRANS_API_BASE_URL\":\"https://api.sandbox.midtrans.com\"});\nfunction upsell(raw) {\n  const d = contact(raw); if (!allowed(d) || d.status !== 'ACTIVE' || Number(d.rating_score) < 4 || !d.rating_score || !d.phone_e164) return null;\n  if (d.last_upsell_at && days(d.last_upsell_at) < 90) return null;\n  const upgrades = JSON.parse(need($env.UPGRADE_CATALOG_JSON, 'UPGRADE_CATALOG_JSON'));\n  const offer = upgrades[d.package_tier]; if (!offer) return null;\n  return { ...d, deal_id: 'UP-' + key(d.project_id + ':' + wibDate()), stage: 'UPSELL_PITCHED', deal_value_idr: numeric(offer.price_idr, 'upgrade price', 1), last_upsell_at: new Date().toISOString(), message: `Halo ${d.full_name || 'Kak'}, tersedia opsi ${need(offer.name, 'upgrade name')} seharga ${formatMoney(offer.price_idr)}. Apakah Anda ingin membahas kesesuaiannya? Balas STOP untuk berhenti.` };\n}\nfunction wibDate(value = Date.now()) { return new Date(new Date(value).getTime() + 7 * 3600000).toISOString().slice(0, 10); }\nfunction allowed(row) { return flag(row.marketing_opt_in) && !flag(row.do_not_contact) && !['DNC', 'UNSUBSCRIBED'].includes(String(row.status).toUpperCase()); }\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction days(value) {\n  const ms = new Date(need(value, 'date')).getTime();\n  if (!Number.isFinite(ms)) throw new Error('Invalid date');\n  return Math.floor((Date.now() - ms) / 86400000);\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction flag(value) { return value === true || value === 'true' || value === 1 || value === '1'; }\nfunction formatMoney(n) { return 'Rp ' + Number(n).toLocaleString('id-ID'); }\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = upsell(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "a102334c-c4bf-4e50-9dfe-c4de53c5930b",
+      "name": "Send WhatsApp 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "6bb1ad03-3053-4e56-864e-e12e2cd03e20",
+      "name": "Check Fonnte result 4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Prepare Upsell Sequence\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "6ff1c492-f186-4515-a8dc-f80e2ef6e968",
+      "name": "Save Projects_DB 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Projects_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "project_id": "={{ $json[\"project_id\"] ?? '' }}",
+            "last_upsell_at": "={{ $json[\"last_upsell_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "project_id"
+          ],
+          "schema": [
+            {
+              "id": "project_id",
+              "displayName": "project_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_upsell_at",
+              "displayName": "last_upsell_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "946e95ef-1795-4586-b8e1-e651d24e9190",
+      "name": "Restore Save Projects_DB 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 4\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "319d9a83-518c-483b-9eab-2978fb5f5337",
+      "name": "Save CRM_Deals 7",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM_Deals",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "deal_id": "={{ $json[\"deal_id\"] ?? '' }}",
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "full_name": "={{ $json[\"full_name\"] ?? '' }}",
+            "email": "={{ $json[\"email\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "company": "={{ $json[\"company\"] ?? '' }}",
+            "owner_name": "={{ $json[\"owner_name\"] ?? '' }}",
+            "owner_wa": "={{ $json[\"owner_wa\"] ?? '' }}",
+            "stage": "={{ $json[\"stage\"] ?? '' }}",
+            "deal_value_idr": "={{ $json[\"deal_value_idr\"] ?? '' }}",
+            "marketing_opt_in": "={{ $json[\"marketing_opt_in\"] ?? '' }}",
+            "do_not_contact": "={{ $json[\"do_not_contact\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "deal_id"
+          ],
+          "schema": [
+            {
+              "id": "deal_id",
+              "displayName": "deal_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "owner_name",
+              "displayName": "owner_name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "owner_wa",
+              "displayName": "owner_wa",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "deal_value_idr",
+              "displayName": "deal_value_idr",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "marketing_opt_in",
+              "displayName": "marketing_opt_in",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "do_not_contact",
+              "displayName": "do_not_contact",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "8b295a68-6162-4d22-b6ae-c134bd5422ca",
+      "name": "Restore Save CRM_Deals 7",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Restore Save Projects_DB 5\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "f57bd73b-f187-4522-8428-de5715473e1b",
+      "name": "Schedule WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 11 * * 4"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "21617ce6-a1c8-46f9-9087-fc1bf4e7c1ba",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Read Projects_DB 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Projects_DB 1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Upsell Sequence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Upsell Sequence": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 3": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 4": {
+      "main": [
+        [
+          {
+            "node": "Save Projects_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Projects_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Projects_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Projects_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Save CRM_Deals 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save CRM_Deals 7": {
+      "main": [
+        [
+          {
+            "node": "Restore Save CRM_Deals 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule WIB": {
+      "main": [
+        [
+          {
+            "node": "Read Projects_DB 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "f5b879bf-0dcf-4d3a-97c9-180c8d50a595",
+  "pinData": {}
+}

@@ -1,0 +1,231 @@
+{
+  "time": "2026-11-01T23:24:29.205Z",
+  "rule_tests_passed": 75,
+  "rule_tests": [
+    "Normalize Indonesian mobile",
+    "Stable lead ID across retries",
+    "Reject empty contact",
+    "Reject invalid phone",
+    "Reject malformed email",
+    "Email-only lead accepted",
+    "Unknown router event rejected",
+    "All 20 routes resolved",
+    "Greeting excludes no consent",
+    "String false does not count as consent",
+    "DNC excludes greeting",
+    "BANT validates score",
+    "BANT rejects NaN",
+    "Malformed AI JSON fails closed",
+    "BANT classification boundaries",
+    "CRM request retries stable",
+    "Ignore own DM echo",
+    "Persist opt-out intent",
+    "Unsupported DM channel rejected",
+    "Booking requires timezone offset",
+    "Reject past meeting",
+    "Reject weekend WIB",
+    "Reject booking outside WIB hours",
+    "Reject occupied slot",
+    "Calendar event identity stable across timezone spellings",
+    "Never invent Meet URL",
+    "Quote numeric totals",
+    "Quote escapes HTML",
+    "Reject negative quantity",
+    "Reject unknown SKU",
+    "Client cannot set discount",
+    "Proposal requires actual URL",
+    "Follow-up count persists",
+    "Cadence stops after 3 sends",
+    "No same-day follow-up duplicate",
+    "Do not follow up a reply",
+    "Do not follow up won deal",
+    "Proposal cadence requires stage",
+    "No reengage without opt-in",
+    "No reengage after recent reply",
+    "Invoice rejects zero amount",
+    "Reject boolean monetary input",
+    "Reject invalid calendar date",
+    "Invoice requires provider URL",
+    "Paid invoices have no reminders",
+    "No daily reminder duplicate",
+    "Reminder only on configured due offsets",
+    "Expired payment link never sent in reminder",
+    "Current payment link included",
+    "Empty callback cannot mark paid",
+    "Unknown invoice rejected",
+    "Wrong payment amount rejected",
+    "Wrong payment order rejected",
+    "Wrong currency rejected",
+    "Pending payment never paid",
+    "Fraud challenge capture never paid",
+    "Duplicate paid callback no-op",
+    "Settled verified amount accepted",
+    "Unpaid onboarding rejected",
+    "Kickoff two business days at 10 WIB",
+    "No fabricated Drive folder",
+    "CSAT 1..5 required",
+    "Review invitation reaches low score",
+    "No invented review feedback",
+    "No upsell without rating",
+    "Upsell 90-day cooldown",
+    "No invented competitor snapshot",
+    "Empty weekly data zero revenue",
+    "Old and future records excluded",
+    "Win rate uses closed deals",
+    "Duplicate report deal rejected",
+    "Report escapes AI content",
+    "21 inactive workflows and valid graph edges",
+    "Greeting sends before AI qualification",
+    "Hot-lead SLA does not block caller"
+  ],
+  "graph_simulations": [
+    {
+      "id": "revenue00",
+      "name": "00. Master Revenue Router",
+      "status": "PASS",
+      "nodes_exercised": 4,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue01",
+      "name": "01. Auto Lead Capture",
+      "status": "PASS",
+      "nodes_exercised": 11,
+      "mocked_effects": 9
+    },
+    {
+      "id": "revenue02",
+      "name": "02. Instant WA Greeting",
+      "status": "PASS",
+      "nodes_exercised": 6,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue03",
+      "name": "03. AI Lead Qualifier",
+      "status": "PASS",
+      "nodes_exercised": 9,
+      "mocked_effects": 6
+    },
+    {
+      "id": "revenue04",
+      "name": "04. Form ke CRM",
+      "status": "PASS",
+      "nodes_exercised": 8,
+      "mocked_effects": 3
+    },
+    {
+      "id": "revenue05",
+      "name": "05. AI DM Auto-Reply",
+      "status": "PASS",
+      "nodes_exercised": 12,
+      "mocked_effects": 3
+    },
+    {
+      "id": "revenue06",
+      "name": "06. Auto Booking Meeting",
+      "status": "PASS",
+      "nodes_exercised": 10,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue07",
+      "name": "07. Notif Hot Leads Sales",
+      "status": "PASS",
+      "nodes_exercised": 11,
+      "mocked_effects": 4
+    },
+    {
+      "id": "revenue08",
+      "name": "08. Quote Generator",
+      "status": "PASS",
+      "nodes_exercised": 6,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue09",
+      "name": "09. Kirim Proposal",
+      "status": "PASS",
+      "nodes_exercised": 8,
+      "mocked_effects": 3
+    },
+    {
+      "id": "revenue10",
+      "name": "10. AI Proposal Summary",
+      "status": "PASS",
+      "nodes_exercised": 6,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue11",
+      "name": "11. Follow-Up WA",
+      "status": "PASS",
+      "nodes_exercised": 7,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue12",
+      "name": "12. Follow-Up Proposal",
+      "status": "PASS",
+      "nodes_exercised": 7,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue13",
+      "name": "13. Re-Engage Leads",
+      "status": "PASS",
+      "nodes_exercised": 7,
+      "mocked_effects": 2
+    },
+    {
+      "id": "revenue14",
+      "name": "14. Invoice dan Reminder",
+      "status": "PASS",
+      "nodes_exercised": 11,
+      "mocked_effects": 3
+    },
+    {
+      "id": "revenue15",
+      "name": "15. Notif Payment Sukses",
+      "status": "PASS",
+      "nodes_exercised": 13,
+      "mocked_effects": 8
+    },
+    {
+      "id": "revenue16",
+      "name": "16. Onboarding Klien",
+      "status": "PASS",
+      "nodes_exercised": 15,
+      "mocked_effects": 5
+    },
+    {
+      "id": "revenue17",
+      "name": "17. Review dan Rating",
+      "status": "PASS",
+      "nodes_exercised": 11,
+      "mocked_effects": 4
+    },
+    {
+      "id": "revenue18",
+      "name": "18. Upsell Sequence",
+      "status": "PASS",
+      "nodes_exercised": 9,
+      "mocked_effects": 3
+    },
+    {
+      "id": "revenue19",
+      "name": "19. AI Competitor Monitor",
+      "status": "PASS",
+      "nodes_exercised": 10,
+      "mocked_effects": 3
+    },
+    {
+      "id": "revenue20",
+      "name": "20. AI Sales Weekly Report",
+      "status": "PASS",
+      "nodes_exercised": 7,
+      "mocked_effects": 2
+    }
+  ],
+  "scope": "JavaScript business rules and workflow graph simulation. External services are mocked. This is not native n8n execution or proof of provider delivery."
+}

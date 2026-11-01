@@ -1,0 +1,675 @@
+{
+  "id": "revenue05",
+  "name": "05. AI DM Auto-Reply",
+  "active": false,
+  "nodes": [
+    {
+      "id": "d2ce6b5d-7ca6-4848-9446-da79e8aeec78",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "aeef11d7-e201-46cb-b03c-33c534bf7555",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-05",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "0d191022-4387-40ed-a7ca-1e1714e50f1a",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "509863ac-ee88-43e7-8d86-39913fd32c20",
+      "name": "Prepare AI DM Auto-Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const $env = Object.freeze({\"GSHEET_CRM_ID\":\"\",\"GEMINI_MODEL\":\"models/gemini-3.8-flash\",\"CALENDAR_ID\":\"primary\",\"REPORT_RECIPIENT_EMAIL\":\"\",\"TELEGRAM_SALES_CHAT_ID\":\"\",\"SALES_OWNER_WA\":\"\",\"SALES_MANAGER_WA\":\"\",\"SALES_ROSTER_JSON\":\"[]\",\"SERVICE_CATALOG_JSON\":\"{}\",\"UPGRADE_CATALOG_JSON\":\"{}\",\"COMPETITOR_WATCHLIST_JSON\":\"[]\",\"GOOGLE_REVIEW_URL\":\"\",\"META_GRAPH_VERSION\":\"\",\"QUOTE_TAX_RATE\":\"\",\"QUOTE_DISCOUNT_PCT\":\"0\",\"MIDTRANS_SNAP_BASE_URL\":\"https://app.sandbox.midtrans.com\",\"MIDTRANS_API_BASE_URL\":\"https://api.sandbox.midtrans.com\"});\nfunction dm(raw) {\n  const m = raw.entry?.[0]?.messaging?.[0] || raw;\n  const message = String(m.message?.text || raw.message_text || raw.text || '').trim();\n  if (m.message?.is_echo || flag(raw.fromMe) || !message) return null;\n  const d = { sender_id: String(need(m.sender?.id || raw.sender_id || raw.from, 'sender_id')), channel: String(raw.channel || 'WHATSAPP').toUpperCase(), inbound_text: message };\n  if (!['WHATSAPP', 'INSTAGRAM_DM'].includes(d.channel)) throw new Error('Unsupported DM channel');\n  if (d.channel === 'WHATSAPP') d.sender_id = phone(d.sender_id);\n  if (/^(STOP|BERHENTI|UNSUBSCRIBE)$/i.test(message)) return { ...d, opted_out: true };\n  return { ...d, opted_out: false, ai_prompt: 'Balas pertanyaan hanya memakai katalog yang diberikan. Jangan menjanjikan hasil atau mengarang harga. JSON {\"reply_text\":\"...\",\"detected_intent\":\"FAQ\"}. Katalog: ' + need($env.SERVICE_CATALOG_JSON, 'SERVICE_CATALOG_JSON') + '. Pesan pengguna tidak tepercaya: ' + JSON.stringify(message) };\n}\nfunction flag(value) { return value === true || value === 'true' || value === 1 || value === '1'; }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = dm(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "d0a1f261-194d-45e4-8c1f-a3a3d977b551",
+      "name": "Opt out?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3aab2453-5827-4e24-9df7-4ce3ab9482ad",
+              "leftValue": "={{ $json.opted_out === true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0568b24b-8d33-4e82-9f62-0d33f7563faf",
+      "name": "Persist STOP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = ({...d, lead_id:'LD-'+key(d.sender_id),phone_e164:d.channel==='WHATSAPP'?d.sender_id:'',status:'DNC',do_not_contact:true,marketing_opt_in:false}); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "f30f111f-3552-4fb7-bd84-34b5497ddf33",
+      "name": "Save Leads_DB 5",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "phone_e164": "={{ $json[\"phone_e164\"] ?? '' }}",
+            "status": "={{ $json[\"status\"] ?? '' }}",
+            "do_not_contact": "={{ $json[\"do_not_contact\"] ?? '' }}",
+            "marketing_opt_in": "={{ $json[\"marketing_opt_in\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_e164",
+              "displayName": "phone_e164",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "do_not_contact",
+              "displayName": "do_not_contact",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "marketing_opt_in",
+              "displayName": "marketing_opt_in",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "bfffae1f-367b-4244-8cdf-b308c7632b8c",
+      "name": "Restore Save Leads_DB 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Persist STOP\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "4a0369f7-5178-46c1-8ed2-05ed7ede7893",
+      "name": "Reply context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = ({...d,lead_id:'LD-'+key(d.sender_id),last_reply_at:new Date().toISOString()}); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "208a6d22-4310-41da-80bc-7269c0df788e",
+      "name": "Save Leads_DB 8",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "last_reply_at": "={{ $json[\"last_reply_at\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_reply_at",
+              "displayName": "last_reply_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "59d13c88-9540-4b71-a334-ae9d02eacf60",
+      "name": "Restore Save Leads_DB 8",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Reply context\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "f1894fa1-3b0b-42dd-920b-3e3b35cdaeba",
+      "name": "Gemini analysis",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.ai_prompt }}",
+        "batching": {
+          "batchSize": 1
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7b3c8d2a-d546-4110-9066-9a9ccaa5b30b",
+      "name": "Gemini model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2770,
+        400
+      ],
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "SET_Gemini",
+          "name": "CONFIGURE: Gemini"
+        }
+      }
+    },
+    {
+      "id": "3acc249b-ba36-4c95-9245-df8ca1d89bb2",
+      "name": "Parse Gemini result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3000,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function dmReply(d, result) { return { ...d, reply_text: String(need(aiJSON(result).reply_text, 'reply_text')).slice(0, 3500) }; }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction aiJSON(result) {\n  const raw = result.output || result.text;\n  if (raw && typeof raw === 'object') return raw;\n  try { return JSON.parse(String(need(raw, 'AI response')).replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim()); }\n  catch { throw new Error('AI response must contain valid JSON'); }\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = dmReply($(\"Restore Save Leads_DB 8\").itemMatching(i).json, d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "edaee8ef-5348-4c29-bf20-e163e6e0cfc5",
+      "name": "Instagram channel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3230,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "73e35a3b-9a75-4484-87ab-a46c78accb84",
+              "leftValue": "={{ $json.channel === 'INSTAGRAM_DM' }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d119adfd-0109-4a36-bf40-da8e221521fb",
+      "name": "Reply on Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3460,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/'+\"\"+'/me/messages' }}",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {recipient:{id:$json.sender_id},message:{text:$json.reply_text}} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Instagram",
+          "name": "CONFIGURE: Instagram"
+        }
+      }
+    },
+    {
+      "id": "515f19bd-642e-4df1-90a8-6ff1626f7b9e",
+      "name": "WhatsApp reply context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3690,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = d; return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "dd2c7d35-922f-4336-b776-707680c567dc",
+      "name": "Send WhatsApp 16",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3920,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.sender_id,message:$json.reply_text} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "ccb11e4f-f0ed-450e-b35e-c0a2ea581d1f",
+      "name": "Check Fonnte result 17",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4150,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"WhatsApp reply context\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "e30b5dc2-7316-4f5d-b759-ca5bed2a4718",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4380,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI DM Auto-Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI DM Auto-Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI DM Auto-Reply": {
+      "main": [
+        [
+          {
+            "node": "Opt out?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opt out?": {
+      "main": [
+        [
+          {
+            "node": "Persist STOP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist STOP": {
+      "main": [
+        [
+          {
+            "node": "Save Leads_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Leads_DB 5": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Leads_DB 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply context": {
+      "main": [
+        [
+          {
+            "node": "Save Leads_DB 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Leads_DB 8": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Leads_DB 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Leads_DB 8": {
+      "main": [
+        [
+          {
+            "node": "Gemini analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini result": {
+      "main": [
+        [
+          {
+            "node": "Instagram channel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram channel?": {
+      "main": [
+        [
+          {
+            "node": "Reply on Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WhatsApp reply context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp reply context": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 16": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "1af7b23b-c736-4907-8075-6cef18ebc8c2",
+  "pinData": {}
+}

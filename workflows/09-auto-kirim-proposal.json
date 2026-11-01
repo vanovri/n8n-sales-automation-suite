@@ -1,0 +1,381 @@
+{
+  "id": "revenue09",
+  "name": "09. Kirim Proposal",
+  "active": false,
+  "nodes": [
+    {
+      "id": "ca9a2fde-dd63-40e6-b313-b95c30130440",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "163fe49e-3910-481d-b261-4455fe28e26d",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-09",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "8839bb10-f30b-4e04-93e7-e66218b42da4",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "96d194a3-0dd2-4468-b697-7782657849ea",
+      "name": "Prepare Kirim Proposal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function proposal(raw) {\n  const d = contact(raw); need(d.email, 'email'); need(d.deal_id, 'deal_id');\n  const p = url(raw.proposal_url, 'proposal_url');\n  return { ...d, proposal_id: String(need(raw.proposal_id, 'proposal_id')), proposal_url: p, subject: 'Proposal ' + raw.proposal_id, email_html: `<p>Yth. ${html(d.full_name)}, berikut proposal yang Anda minta.</p><p><a href=\"${html(p)}\">Buka proposal</a></p>`, message: `Proposal ${raw.proposal_id}: ${p}`, proposal_sent_at: new Date().toISOString(), next_followup_at: new Date(Date.now() + 2 * 86400000).toISOString(), stage: 'PROPOSAL_SENT', proposal_followup_count: 0 };\n}\nfunction url(value, name) {\n  const s = String(need(value, name));\n  if (!/^https:\\/\\/[^\\s<>\"']+$/i.test(s)) throw new Error('Invalid HTTPS URL: ' + name);\n  return s;\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction html(value) { return String(value ?? '').replace(/[&<>\"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = proposal(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "4b734a71-0814-4538-8a19-c4188925d35d",
+      "name": "Send email 3",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "SET_Gmail",
+          "name": "CONFIGURE: Gmail"
+        }
+      }
+    },
+    {
+      "id": "956225f8-9aec-4efe-8352-f58eccda0fa7",
+      "name": "Restore Send email 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Prepare Kirim Proposal\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "d3663969-daf8-4b4d-933c-d629e8ed9326",
+      "name": "Send WhatsApp 5",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "3f932a74-92d7-440f-9266-3d7a6d0d86cf",
+      "name": "Check Fonnte result 6",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Restore Send email 3\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "8e915857-6f78-4200-bc0a-e20527da4755",
+      "name": "Save CRM_Deals 7",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM_Deals",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "deal_id": "={{ $json[\"deal_id\"] ?? '' }}",
+            "proposal_id": "={{ $json[\"proposal_id\"] ?? '' }}",
+            "proposal_url": "={{ $json[\"proposal_url\"] ?? '' }}",
+            "stage": "={{ $json[\"stage\"] ?? '' }}",
+            "proposal_sent_at": "={{ $json[\"proposal_sent_at\"] ?? '' }}",
+            "next_followup_at": "={{ $json[\"next_followup_at\"] ?? '' }}",
+            "proposal_followup_count": "={{ $json[\"proposal_followup_count\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "deal_id"
+          ],
+          "schema": [
+            {
+              "id": "deal_id",
+              "displayName": "deal_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "proposal_id",
+              "displayName": "proposal_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "proposal_url",
+              "displayName": "proposal_url",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "proposal_sent_at",
+              "displayName": "proposal_sent_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "next_followup_at",
+              "displayName": "next_followup_at",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "proposal_followup_count",
+              "displayName": "proposal_followup_count",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "234e868b-6b93-491f-ac8e-cb3ffdc4846a",
+      "name": "Restore Save CRM_Deals 7",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Check Fonnte result 6\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "3aae4aa7-391e-47a8-b9bf-ee0f46704341",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Kirim Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Kirim Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Kirim Proposal": {
+      "main": [
+        [
+          {
+            "node": "Send email 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email 3": {
+      "main": [
+        [
+          {
+            "node": "Restore Send email 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Send email 3": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 5": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fonnte result 6": {
+      "main": [
+        [
+          {
+            "node": "Save CRM_Deals 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save CRM_Deals 7": {
+      "main": [
+        [
+          {
+            "node": "Restore Save CRM_Deals 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "3a1d747d-4e5f-406c-99c2-ef06a825fe1e",
+  "pinData": {}
+}

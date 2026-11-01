@@ -1,0 +1,440 @@
+{
+  "id": "revenue06",
+  "name": "06. Auto Booking Meeting",
+  "active": false,
+  "nodes": [
+    {
+      "id": "8414490d-ade5-4a68-a9bd-919f79c43b9d",
+      "name": "Workflow input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "d834fa45-fe8e-4484-9e1b-e1f41377682f",
+      "name": "Inbound webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        470,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revenue-06",
+        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "webhookId": "c0fe0ece-3c74-4de0-b8ba-2dc753ef8d06",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Revenue_webhook",
+          "name": "CONFIGURE: Revenue webhook"
+        }
+      }
+    },
+    {
+      "id": "9a2517bc-4600-4579-885a-19875b3e5d8b",
+      "name": "Prepare Auto Booking Meeting",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function booking(raw) {\n  const d = contact(raw); need(d.lead_id, 'lead_id'); need(d.email, 'email');\n  const s = String(need(raw.preferred_datetime, 'preferred_datetime with UTC offset'));\n  if (!/(Z|[+-]\\d\\d:\\d\\d)$/.test(s)) throw new Error('Datetime must contain timezone offset');\n  const start = new Date(s), duration = numeric(raw.duration_minutes ?? 30, 'duration_minutes', 15, 120);\n  if (!Number.isFinite(start.getTime()) || start.getTime() <= Date.now()) throw new Error('Meeting must be in future');\n  const local = new Date(start.getTime() + 7 * 3600000), end = new Date(start.getTime() + duration * 60000);\n  const endLocal = new Date(end.getTime() + 7 * 3600000);\n  if ([0, 6].includes(local.getUTCDay()) || local.getUTCHours() < 9 || endLocal.getUTCHours() > 17 || (endLocal.getUTCHours() === 17 && endLocal.getUTCMinutes() > 0)) throw new Error('Outside business hours: Mon-Fri 09:00-17:00 WIB');\n  return { ...d, start_iso: start.toISOString(), end_iso: end.toISOString(), requested_event_id:key(d.lead_id+':'+start.toISOString()), agenda: String(raw.agenda || 'Diskusi kebutuhan') };\n}\nfunction contact(raw) {\n  const phoneE164 = phone(raw.phone_e164 || raw.phone_wa || raw.phone || raw.whatsapp || raw.contact_wa);\n  const e = email(raw.email || raw.contact_email || raw.client_email);\n  return { ...raw, full_name: String(raw.full_name || raw.client_name || raw.contact_name || raw.name || '').trim(), phone_e164: phoneE164, email: e };\n}\nfunction email(value) {\n  const e = String(value || '').trim().toLowerCase();\n  if (e && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e)) throw new Error('Invalid email');\n  return e;\n}\nfunction key(value) { return require('crypto').createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction numeric(value, name, min = 0, max = Number.MAX_SAFE_INTEGER) {\n  if (!['number','string'].includes(typeof value)) throw new Error('Invalid: ' + name);\n  const n = Number(need(value, name));\n  if (!Number.isFinite(n) || n < min || n > max) throw new Error('Invalid: ' + name);\n  return n;\n}\nfunction phone(value) {\n  let p = String(value || '').replace(/\\D/g, '');\n  if (p.startsWith('0')) p = '62' + p.slice(1);\n  else if (p.startsWith('8')) p = '62' + p;\n  if (p && !/^628\\d{7,11}$/.test(p)) throw new Error('Invalid Indonesian mobile number');\n  return p;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = booking(d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "5d8f1036-3646-495d-9400-41632b9341a2",
+      "name": "Read calendar availability",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [
+        930,
+        400
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ \"primary\" || 'primary' }}",
+          "mode": "id"
+        },
+        "returnAll": true,
+        "options": {
+          "timeMin": "={{ $json.start_iso }}",
+          "timeMax": "={{ $json.end_iso }}"
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "SET_Google_Calendar",
+          "name": "CONFIGURE: Google Calendar"
+        }
+      }
+    },
+    {
+      "id": "0428fb94-7412-4b56-b8ea-7c3d155649b7",
+      "name": "Reject occupied slot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function available(d, events) {\n  if (events.some(e => e.id && e.status !== 'cancelled' && e.transparency !== 'transparent')) throw new Error('Calendar conflict. Choose another slot.');\n  return d;\n}\nreturn [{json:available($(\"Prepare Auto Booking Meeting\").first().json,$input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "699c8f7b-e040-4e05-b77f-48a3669ec143",
+      "name": "Create calendar event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [
+        1390,
+        400
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ \"primary\" || 'primary' }}",
+          "mode": "id"
+        },
+        "start": "={{ $json.start_iso }}",
+        "end": "={{ $json.end_iso }}",
+        "additionalFields": {
+          "summary": "={{ $json.agenda }}",
+          "attendees": [
+            "={{ $json.email }}"
+          ],
+          "conferenceDataUi": {
+            "conferenceDataValues": {
+              "conferenceSolution": "hangoutsMeet"
+            }
+          },
+          "id": "={{ $json.requested_event_id }}"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "SET_Google_Calendar",
+          "name": "CONFIGURE: Google Calendar"
+        }
+      }
+    },
+    {
+      "id": "5b2d1795-a6d6-4a9c-b423-3551b662d90b",
+      "name": "Use created calendar links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function booked(d, event) {\n  const meet = event.hangoutLink || event.conferenceData?.entryPoints?.find(x => x.entryPointType === 'video')?.uri;\n  need(event.id, 'created calendar event id');\n  return { ...d, calendar_event_id: event.id, meet_url: meet ? url(meet, 'Meet URL') : '', status: 'MEETING_BOOKED', message: `Jadwal ${d.agenda}: ${new Date(d.start_iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB.${meet ? ' Google Meet: ' + meet : ' Undangan tersedia di email Anda.'}` };\n}\nfunction need(value, name) {\n  if (value === undefined || value === null || String(value).trim() === '') throw new Error('Required: ' + name);\n  return value;\n}\nfunction url(value, name) {\n  const s = String(need(value, name));\n  if (!/^https:\\/\\/[^\\s<>\"']+$/i.test(s)) throw new Error('Invalid HTTPS URL: ' + name);\n  return s;\n}\nreturn $input.all().flatMap((item, i) => { const d = item.json.body ?? item.json; const out = booked($('Reject occupied slot').itemMatching(i).json,d); return out ? [{json:out,pairedItem:{item:i}}] : []; });"
+      }
+    },
+    {
+      "id": "e16656d3-1c83-4fca-adb2-c5f255419217",
+      "name": "Save Leads_DB 7",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1850,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ \"\" }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads_DB",
+          "mode": "name"
+        },
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json[\"lead_id\"] ?? '' }}",
+            "calendar_event_id": "={{ $json[\"calendar_event_id\"] ?? '' }}",
+            "start_iso": "={{ $json[\"start_iso\"] ?? '' }}",
+            "meet_url": "={{ $json[\"meet_url\"] ?? '' }}",
+            "status": "={{ $json[\"status\"] ?? '' }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "calendar_event_id",
+              "displayName": "calendar_event_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "start_iso",
+              "displayName": "start_iso",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "meet_url",
+              "displayName": "meet_url",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SET_Google_Sheets",
+          "name": "CONFIGURE: Google Sheets"
+        }
+      }
+    },
+    {
+      "id": "d8aab89c-2c9b-44e6-b95c-5ab0c8e372fc",
+      "name": "Restore Save Leads_DB 7",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>({json:$(\"Use created calendar links\").itemMatching(i).json,pairedItem:{item:i}}));"
+      }
+    },
+    {
+      "id": "abc473b6-e9f7-4cee-b4b7-24de9873580d",
+      "name": "Send WhatsApp 9",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2310,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {target:$json.phone_e164,message:$json.message} }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_Fonnte",
+          "name": "CONFIGURE: Fonnte"
+        }
+      }
+    },
+    {
+      "id": "25a8d671-dd6a-4a46-ae9a-565f8c44ee37",
+      "name": "Check Fonnte result 10",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2540,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nreturn $input.all().map((item,i)=>{ if(item.json.status !== true) throw new Error('WhatsApp provider rejected message'); return {json:$(\"Restore Save Leads_DB 7\").itemMatching(i).json,pairedItem:{item:i}};});"
+      }
+    },
+    {
+      "id": "6f127d51-a6a5-4b1f-9a6e-19bb66ffdf79",
+      "name": "Setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2770,
+        400
+      ],
+      "parameters": {
+        "content": "Pilih kredensial CONFIGURE pada setiap node. Semua workflow dinonaktifkan sampai preflight lulus. Kontrak input, header CRM, pengujian, dan batas implementasi tersedia di README.md. Data pengujian hanya sintetis.",
+        "width": 600,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Workflow input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Auto Booking Meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Auto Booking Meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Auto Booking Meeting": {
+      "main": [
+        [
+          {
+            "node": "Read calendar availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read calendar availability": {
+      "main": [
+        [
+          {
+            "node": "Reject occupied slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reject occupied slot": {
+      "main": [
+        [
+          {
+            "node": "Create calendar event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create calendar event": {
+      "main": [
+        [
+          {
+            "node": "Use created calendar links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use created calendar links": {
+      "main": [
+        [
+          {
+            "node": "Save Leads_DB 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Leads_DB 7": {
+      "main": [
+        [
+          {
+            "node": "Restore Save Leads_DB 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Save Leads_DB 7": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp 9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp 9": {
+      "main": [
+        [
+          {
+            "node": "Check Fonnte result 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "0df82665-9511-4856-aa9c-8e038e08590b",
+  "pinData": {}
+}
