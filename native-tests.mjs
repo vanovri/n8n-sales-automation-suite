@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import {config,fixtures,aiResult,verified,lead,deal,invoice,project} from './test.mjs';
+import {fixed,config,fixtures,aiResult,verified,lead,deal,invoice,project} from './test.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const output=path.resolve(process.argv[2] || path.join(root,'..','..','work','native-tests.json'));
 const originals=JSON.parse(fs.readFileSync(path.join(root,'all-workflows.json'),'utf8'));
@@ -26,7 +26,7 @@ for(let index=0;index<cloned.length;index++){
     else if(n.type.endsWith('.googleSheets')){
       const p=n.parameters,table=p.sheetName.value;
       if(p.operation==='read'){
-        const rows=table==='Leads_DB'?(index===1?[]:[{...lead,claim_status:'UNCLAIMED'}]):table==='CRM_Deals'?[deal]:table==='Invoices_DB'?[index===16?{...invoice,payment_status:'PAID'}:invoice]:table==='Projects_DB'?(index===16?[]:[project]):[];
+        const rows=table==='Leads_DB'?(index===1?[]:[{...lead,claim_status:'UNCLAIMED',...(index===11?{followup_count:''}:{})}]):table==='CRM_Deals'?[deal]:table==='Invoices_DB'?[index===16?{...invoice,payment_status:'PAID'}:invoice]:table==='Projects_DB'?(index===16?[]:[project]):[];
         js='return '+JSON.stringify(rows)+'.map(json=>({json}));';
       }else js='return $input.all().map((item,i)=>{const $json=item.json;return {json:{'+Object.entries(p.columns.value).map(([key,value])=>JSON.stringify(key)+':'+expr(value)).join(',')+'},pairedItem:{item:i}};});';
     }else if(n.type.endsWith('.httpRequest')){
@@ -44,6 +44,10 @@ for(let index=0;index<cloned.length;index++){
       n.parameters.workflowId.value=id.startsWith('=')?'={{ "qa" + $json.target_workflow_id }}':'qa'+id;
     }
     if(js){n.type='n8n-nodes-base.code';n.typeVersion=2;n.parameters={mode:'runOnceForAllItems',jsCode:js};}
+    if(n.type.endsWith('.code')){
+      // Code nodes run in separate n8n sandboxes, outside the generator's frozen clock.
+      n.parameters.jsCode=`const Date=class extends globalThis.Date {constructor(...args){super(...(args.length?args:[${fixed}]));}static now(){return ${fixed};}};\n`+n.parameters.jsCode;
+    }
   }
 }
 const suite={id:'qaRevenueSuite',name:'QA MOCK Revenue suite. No external delivery.',active:false,nodes:[{id:randomUUID(),name:'Workflow input',type:'n8n-nodes-base.executeWorkflowTrigger',typeVersion:1.1,position:[0,300],parameters:{inputSource:'passthrough'}}],connections:{},settings:{executionOrder:'v1',timezone:'Asia/Jakarta',callerPolicy:'workflowsFromSameOwner'}};

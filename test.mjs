@@ -162,4 +162,4 @@ test('Hot-lead SLA does not block caller',()=>assert.equal(workflows.find(w=>w.i
 fs.mkdirSync(path.join(root,'reports'),{recursive:true});
 fs.writeFileSync(path.join(root,'reports','local-tests.json'),JSON.stringify({time:new RealDate().toISOString(),rule_tests_passed:count,rule_tests:checks,graph_simulations:graphResults,scope:'JavaScript business rules and workflow graph simulation. External services are mocked. This is not native n8n execution or proof of provider delivery.'},null,2)+'\n');
 console.log(count+' rule checks PASS; '+graphResults.length+'/21 workflow graph simulations PASS. External services mocked.');
-export {config,fixtures,aiResult,verified,lead,deal,invoice,project};
+export {fixed,config,fixtures,aiResult,verified,lead,deal,invoice,project};
