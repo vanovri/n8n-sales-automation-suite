@@ -55,6 +55,12 @@ test('Reject unknown SKU',()=>throws(()=>L.quote({...contact,request_id:'quote',
 test('Client cannot set discount',()=>assert.equal(L.quote({...contact,discount_pct:100,request_id:'quote',items:[{sku:'TEST',qty:1}]}).discount_idr,0));
 test('Proposal requires actual URL',()=>throws(()=>L.proposal({...deal}),/proposal_url/));
 test('Follow-up count persists',()=>assert.equal(L.followup({...lead,followup_count:0}).followup_count,1));
+test('Blank first follow-up count starts at one',()=>assert.equal(L.followup({...lead,followup_count:' '}).followup_count,1));
+test('Unknown previous follow-up counts never send',()=>{
+  assert.equal(L.followup({...lead,followup_count:'',last_followup_at:'2000-01-01'}),null);
+  assert.equal(L.followup({...lead,followup_count:'not a count'}),null);
+  assert.equal(L.followup({...lead,followup_count:0.5}),null);
+});
 test('Cadence stops after 3 sends',()=>assert.equal(L.followup({...lead,followup_count:3}),null));
 test('No same-day follow-up duplicate',()=>assert.equal(L.followup({...lead,last_followup_at:new Date().toISOString()}),null));
 test('Do not follow up a reply',()=>assert.equal(L.followup({...lead,last_reply_at:'2026-10-31T00:00:00Z'}),null));
@@ -89,7 +95,14 @@ test('Review invitation reaches low score',()=>assert.ok(L.review({...project,re
 test('No invented review feedback',()=>assert.equal(L.review({...project,request_id:'review',rating_score:5}).feedback,''));
 test('No upsell without rating',()=>assert.equal(L.upsell({...project,rating_score:undefined}),null));
 test('Upsell 90-day cooldown',()=>assert.equal(L.upsell({...project,last_upsell_at:new Date().toISOString()}),null));
-test('No invented competitor snapshot',()=>throws(()=>L.snapshot({competitor_name:'X'},{}),/fetched competitor text/));
+test('Only successful nonempty pricing responses create snapshots',()=>{
+  const competitor={competitor_name:'X'};
+  assert.equal(L.snapshot(competitor,{}),null);
+  assert.equal(L.snapshot(competitor,{statusCode:308,body:'Redirect'}),null);
+  assert.equal(L.snapshot(competitor,{statusCode:403,body:'Forbidden'}),null);
+  assert.equal(L.snapshot(competitor,{statusCode:200,body:'<style>a{}</style>'}),null);
+  assert.equal(L.snapshot(competitor,{statusCode:200,body:'<b>Rp 1.000</b>'}).snapshot,'Rp 1.000');
+});
 test('Empty weekly data zero revenue',()=>{const r=L.weekly([]);assert.equal(r.won_revenue_idr,0);assert.equal(r.total_deals,0);assert.equal(r.win_rate_pct,0);});
 test('Old and future records excluded',()=>assert.equal(L.weekly([{deal_id:'old',date:'2020-01-01',amount_idr:999,status:'CLOSED_WON'},{deal_id:'future',date:'2030-01-01',amount_idr:999,status:'CLOSED_WON'}]).won_revenue_idr,0));
 test('Win rate uses closed deals',()=>{const r=L.weekly([{...deal,deal_id:'one',status:'',stage:'CLOSED_WON'},{...deal,deal_id:'two',stage:'CLOSED_LOST'},{...deal,deal_id:'three',stage:'PROPOSAL_SENT'}]);assert.equal(r.win_rate_pct,50);assert.equal(r.open_pipeline_idr,1000000);});
@@ -126,7 +139,7 @@ async function runGraph(w,input,depth=0){
       else {out=items.map(item=>({json:evaluate(p.columns.value,item)}));effects.push({type:'sheet-write',table,rows:out.length});for(const item of out){db[table]||=[];const k=p.columns.matchingColumns[0],index=db[table].findIndex(r=>r[k]===item.json[k]);if(index<0)db[table].push(item.json);else db[table][index]={...db[table][index],...item.json};}}
     }else if(n.type.includes('chainLlm')){effects.push({type:'mock-ai',workflow:w.id});out=items.map(()=>({json:{text:JSON.stringify(aiResult)}}));}
     else if(n.type.endsWith('.httpRequest')){
-      out=items.map(item=>{if(n.name==='Create Midtrans payment link')return{json:{redirect_url:'https://example.test/pay'}};if(n.name==='Verify Midtrans server status')return{json:verified};if(n.name==='Fetch configured pricing page')return{json:{data:'<html>Test price Rp 1.000.000</html>'}};const body=evaluate(n.parameters.jsonBody,item);if(n.name.includes('WhatsApp')){assert.ok(body.target,'Missing WA target');assert.ok(body.message,'Missing WA message');}effects.push({type:'mock-http',node:n.name});return{json:{status:true,id:'provider-test'}};});
+      out=items.map(item=>{if(n.name==='Create Midtrans payment link')return{json:{redirect_url:'https://example.test/pay'}};if(n.name==='Verify Midtrans server status')return{json:verified};if(n.name==='Fetch configured pricing page')return{json:{statusCode:200,body:'<html>Test price Rp 1.000.000</html>'}};const body=evaluate(n.parameters.jsonBody,item);if(n.name.includes('WhatsApp')){assert.ok(body.target,'Missing WA target');assert.ok(body.message,'Missing WA message');}effects.push({type:'mock-http',node:n.name});return{json:{status:true,id:'provider-test'}};});
     }else if(n.type.endsWith('.googleCalendar')){for(const item of items)evaluate(n.parameters,item);out=n.parameters.operation==='getAll'?[{json:{}}]:items.map(()=>({json:{id:'created-event',hangoutLink:'https://meet.google.com/test-only'}}));}
     else if(n.type.endsWith('.googleDrive'))out=items.map(()=>({json:{id:'created-folder'}}));
     else if(n.type.endsWith('.telegram')||n.type.endsWith('.gmail')){out=items.map(item=>{const p=evaluate(n.parameters,item);if(n.type.endsWith('.gmail')){if(w.id==='revenue20')p.sendTo=config.REPORT_RECIPIENT_EMAIL;assert.ok(p.sendTo,'Missing email recipient');assert.ok(p.message,'Missing email message');}else assert.ok(p.text,'Missing Telegram text');return{json:{id:'synthetic-message'}};});effects.push({type:'mock-send',node:n.name});}

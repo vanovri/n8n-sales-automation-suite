@@ -31,7 +31,7 @@ for(let index=0;index<cloned.length;index++){
       }else js='return $input.all().map((item,i)=>{const $json=item.json;return {json:{'+Object.entries(p.columns.value).map(([key,value])=>JSON.stringify(key)+':'+expr(value)).join(',')+'},pairedItem:{item:i}};});';
     }else if(n.type.endsWith('.httpRequest')){
       const p=n.parameters;
-      const result=n.name==='Create Midtrans payment link'?{redirect_url:'https://example.test/pay'}:n.name==='Verify Midtrans server status'?verified:n.name==='Fetch configured pricing page'?{data:'<html>Test price Rp 1.000.000</html>'}:{status:true,id:'mock-provider'};
+      const result=n.name==='Create Midtrans payment link'?{redirect_url:'https://example.test/pay'}:n.name==='Verify Midtrans server status'?verified:n.name==='Fetch configured pricing page'?{statusCode:200,body:'<html>Test price Rp 1.000.000</html>'}:{status:true,id:'mock-provider'};
       js='return $input.all().map((item,i)=>{const $json=item.json;'+(p.jsonBody?'const payload='+expr(p.jsonBody)+';if(!payload)throw new Error("Missing mock HTTP payload");':'')+'return {json:'+JSON.stringify(result)+',pairedItem:{item:i}};});';
     }else if(n.type.endsWith('.googleCalendar')) js=n.parameters.operation==='getAll'?'return [{json:{}}];':'return $input.all().map((item,i)=>({json:{id:"created-event",hangoutLink:"https://meet.google.com/test-only"},pairedItem:{item:i}}));';
     else if(n.type.endsWith('.googleDrive')) js='return $input.all().map((item,i)=>({json:{id:"created-folder"},pairedItem:{item:i}}));';

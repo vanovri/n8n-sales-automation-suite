@@ -191,8 +191,9 @@ for (let number = 0; number <= 20; number++) {
     const read=sheet(w,entry,'Projects_DB',null,null,true);start=prepare(w,read,'upsell');start=wa(w,start);start=sheet(w,start,'Projects_DB','project_id last_upsell_at','project_id');start=sheet(w,start,'CRM_Deals',dealFields,'deal_id');
   } else if (number === 19) {
     start=code(w,'Configured competitor watchlist','return watchlist().map(json=>({json}));');edge(w,entry,start);
-    const fetch=http(w,start,'Fetch configured pricing page',expression('$json.pricing_url'),null,null,'GET',{response:{response:{responseFormat:'text',outputPropertyName:'data'}},redirect:{redirect:{followRedirects:false}}});
-    const extracted=map(w,'Extract actual snapshot',`snapshot($('Configured competitor watchlist').itemMatching(i).json,d)`);edge(w,fetch,extracted);start=ai(w,extracted,'intel');start=sheet(w,start,'Competitor_Intel_DB','snapshot_id competitor_name pricing_url snapshot summary observed_at','snapshot_id');start=telegram(w,start,'$json.message');
+    const fetch=http(w,start,'Fetch configured pricing page',expression('$json.pricing_url'),null,null,'GET',{response:{response:{responseFormat:'text',fullResponse:true,neverError:true}},redirect:{redirect:{followRedirects:false}}});
+    w.nodes.find(n => n.name === fetch).onError = 'continueRegularOutput';
+    const extracted=map(w,'Extract actual snapshot',`snapshot($('Configured competitor watchlist').itemMatching(i).json,item.json)`);edge(w,fetch,extracted);start=ai(w,extracted,'intel');start=sheet(w,start,'Competitor_Intel_DB','snapshot_id competitor_name pricing_url snapshot summary observed_at','snapshot_id');start=telegram(w,start,'$json.message');
   } else if (number === 20) {
     const read=sheet(w,entry,'CRM_Deals',null,null,true);start=code(w,'Compute actual weekly metrics','return [{json:weekly($input.all().map(i=>i.json))}];');edge(w,read,start);start=ai(w,start,'report');start=gmail(w,start,'$json.subject','$json.email_html','$env.REPORT_RECIPIENT_EMAIL');
   }
